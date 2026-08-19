@@ -1,115 +1,88 @@
-# LaTeX Documentation Workspace
+# LaTeX Documentation Workspace 2.0
 
-A clean, modular local LaTeX authoring, live preview, and PDF export workspace designed for technical and scientific documentation.
-
-## Features
-
-- **Multi-File LaTeX Project Support**: Extensible file tree for modular chapters, bibliography (`.bib`), and figures.
-- **Isolated Build System**: All intermediate files (`.aux`, `.log`, `.synctex`, etc.) reside strictly in `.build/`, keeping the source tree clean.
-- **Multi-Engine Compiler Abstraction**:
-  - **Tectonic** (Default / Portable): Self-contained engine with automatic package retrieval.
-  - **pdfLaTeX**: Traditional TeX Live / MiKTeX workflow.
-  - **XeLaTeX**: Native UTF-8 and system font support.
-  - **LuaLaTeX**: Advanced typesetting with embedded Lua engine.
-- **Live PDF Preview & Direct Export**: Embedded preview with instant reload upon compilation and a one-click "Export PDF" download action.
-- **Structured Error Diagnostics**: Automated log parsing extracts file, line number, and human-readable error messages with direct click-to-line editor navigation.
-- **Build Cancellation**: Safely cancel long-running compilations without race conditions or overwriting existing previews.
-- **Keyboard Shortcuts**:
-  - `Ctrl+S` / `Cmd+S`: Save active file (and auto-build if enabled)
-  - `Ctrl+B` / `Cmd+B`: Compile active project
+A sleek, high-performance LaTeX authoring workspace built on **Next.js 15**, **TypeScript**, **Tailwind CSS**, and **Monaco Editor**.
 
 ---
 
-## Directory Structure
+## ✨ Features
 
-```text
-.
-├── README.md
-├── package.json
-├── .gitignore
-├── .build/                     # Isolated build artifacts (gitignored)
-│   └── .gitkeep
-├── bin/                        # Local portable binaries (gitignored)
-│   └── .gitkeep
-├── server/                     # Node.js Express Backend
-│   ├── index.js                # Server entrypoint
-│   ├── api/                    # REST API endpoints (files, project, compile)
-│   │   ├── files.js
-│   │   ├── projects.js
-│   │   └── compile.js
-│   ├── compiler/               # Compiler abstraction & management
-│   │   ├── compiler.js         # Base engine interface
-│   │   ├── compiler-manager.js # Lifecycle, build queue & cancellation
-│   │   ├── detector.js         # LaTeX engine detector
-│   │   ├── error-parser.js     # Diagnostic & log parser
-│   │   ├── build-manager.js    # Build tracking & isolation
-│   │   └── engines/            # Engine implementations
-│   │       ├── tectonic.js
-│   │       ├── pdflatex.js
-│   │       ├── xelatex.js
-│   │       └── lualatex.js
-│   └── utils/
-│       ├── filesystem.js
-│       ├── process.js
-│       └── setup-tectonic.js   # Automated portable engine installer
-├── client/                     # Lightweight Frontend UI
-│   ├── index.html
-│   ├── css/style.css
-│   └── js/
-│       ├── app.js              # UI coordinator
-│       ├── editor.js           # LaTeX editor with syntax highlighting
-│       ├── filetree.js         # Multi-file explorer & chapter manager
-│       ├── preview.js          # PDF preview & export
-│       ├── console.js          # Problems and build log console
-│       └── project.js          # REST client
-└── workspace/                  # LaTeX Document Source
-    ├── project.json            # Project config (rootFile, compiler, autoBuild)
-    ├── main.tex                # Root document
-    ├── chapters/
-    │   └── 01-introduction.tex # Sample chapter
-    ├── figures/                # Figures directory
-    └── references.bib          # Bibliography database
-```
+- ⚡ **Next.js 15 & TypeScript**: Fully type-safe REST API routes and interactive React components.
+- 🎨 **Sleek Obsidian UI**: Dark aesthetic with glassmorphic accents, custom scrollbars, and modern web design standards.
+- 📝 **Monaco LaTeX Editor**: Full LaTeX syntax coloring, bracket pair colorization, line markers for errors/warnings, keyboard shortcuts (`Ctrl+S` to save, `Ctrl+B` to compile), and jump-to-line navigation.
+- 📂 **Hierarchical Explorer**: Multi-file project organization (`main.tex`, `chapters/`, `figures/`, `references.bib`), file/folder creation, inline renaming, deletion, and dynamic root-file selection.
+- 🔄 **Live PDF Preview & Export**: High-definition embedded PDF preview with persistent caching on failed builds, full-screen expansion, and one-click PDF download.
+- 🛠️ **Multi-Engine LaTeX Compiler**: Built-in support for **Tectonic** (default, automatic package resolution), **pdfLaTeX**, **XeLaTeX**, and **LuaLaTeX** with compilation cancellation.
+- 📊 **Diagnostics Drawer**: Structured Problems list with clickable line jumps and raw compiler terminal logs with copy/clear actions.
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### 1. Prerequisites
-- **Node.js**: v18+ (tested on Node v24)
-- **LaTeX Engine**: Tectonic (portable), TeX Live, or MiKTeX.
+- **Node.js**: `v18+` or `v20+` (tested on Node `v24.18.0`)
+- **Git**
 
-### 2. Setup Compiler (Portable Tectonic)
-If you do not have a system TeX distribution installed, install portable Tectonic with:
+### 2. Setup Portable Engine (Optional)
+If you don't have TeX Live or MiKTeX installed, download portable Tectonic into `bin/`:
 ```bash
 npm run setup
 ```
-This downloads and verifies `tectonic` into the local `bin/` directory.
 
-### 3. Start Application
+### 3. Start Development Server
 ```bash
+npm run dev
+```
+Open **[http://localhost:3080](http://localhost:3080)** in your browser.
+
+### 4. Build & Production Start
+```bash
+npm run build
 npm start
 ```
-Open your browser at **`http://localhost:3000`**.
 
 ---
 
-## Project Configuration
+## ⌨️ Keyboard Shortcuts
 
-The project behavior is configured via `workspace/project.json`:
-```json
-{
-  "name": "Technical Documentation",
-  "rootFile": "main.tex",
-  "compiler": "tectonic",
-  "autoBuild": false,
-  "synctex": true,
-  "buildDir": ".build"
-}
-```
+| Shortcut | Action |
+| :--- | :--- |
+| <kbd>Ctrl</kbd> + <kbd>S</kbd> / <kbd>Cmd</kbd> + <kbd>S</kbd> | Save current buffer (triggers compilation if auto-build is active) |
+| <kbd>Ctrl</kbd> + <kbd>B</kbd> / <kbd>Cmd</kbd> + <kbd>B</kbd> | Compile LaTeX project and refresh preview |
 
-## Running Automated Tests
+---
 
-```bash
-npm test
+## 📁 Project Structure
+
+```text
+Pro-doc/
+├── src/
+│   ├── app/
+│   │   ├── api/                     # Next.js API route handlers
+│   │   │   ├── compile/             # Build trigger, cancellation, engines, PDF streaming
+│   │   │   ├── files/               # Workspace tree and CRUD handlers
+│   │   │   └── project/             # Project configuration API
+│   │   ├── globals.css              # Obsidian theme & custom scrollbar styles
+│   │   ├── layout.tsx               # Root layout & meta tags
+│   │   └── page.tsx                 # Main workspace coordinator
+│   ├── components/                  # React UI components
+│   │   ├── Toolbar.tsx              # Glassmorphic top bar & build actions
+│   │   ├── FileTree.tsx             # Tree file manager & chapter explorer
+│   │   ├── LatexMonacoEditor.tsx    # Monaco Editor with LaTeX theme
+│   │   ├── PdfViewer.tsx            # Live PDF preview & full screen mode
+│   │   └── DiagnosticsPanel.tsx     # Problems and raw output drawer
+│   └── lib/                         # Type-safe compiler engine & utilities
+│       ├── compiler/                # Tectonic, pdfLaTeX, XeLaTeX, LuaLaTeX adapters
+│       ├── utils/                   # Safe path resolution and process isolation
+│       └── types.ts                 # Core TypeScript definitions
+├── workspace/                       # Modular LaTeX document project
+│   ├── project.json                 # Project configuration
+│   ├── main.tex                     # Root LaTeX document
+│   ├── chapters/                    # Chapter modular includes
+│   └── references.bib               # BibTeX citations
+├── scripts/                         # Setup and testing scripts
+│   ├── setup-tectonic.js
+│   └── run-tests.js
+├── tailwind.config.ts
+├── tsconfig.json
+└── package.json
 ```

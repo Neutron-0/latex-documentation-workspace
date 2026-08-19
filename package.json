@@ -1,25 +1,30 @@
 {
   "name": "latex-documentation-workspace",
-  "version": "1.0.0",
-  "description": "Clean, modular local LaTeX authoring environment with multi-file project support, compilation, PDF preview, PDF export, and diagnostics.",
-  "main": "server/index.js",
+  "version": "2.0.0",
+  "description": "Sleek, modern LaTeX documentation workspace powered by Next.js, TypeScript, Tailwind CSS, and Monaco Editor.",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
-    "setup": "node server/utils/setup-tectonic.js",
-    "test": "node server/tests/run-tests.js"
+    "dev": "next dev -p 3080",
+    "build": "next build",
+    "start": "next start -p 3080",
+    "setup": "node scripts/setup-tectonic.js",
+    "test": "node scripts/run-tests.js"
   },
-  "keywords": [
-    "latex",
-    "editor",
-    "preview",
-    "pdf",
-    "tectonic",
-    "pdflatex"
-  ],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
-    "express": "^4.21.2"
+    "@monaco-editor/react": "^4.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.16.0",
+    "next": "^15.1.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
   }
 }
