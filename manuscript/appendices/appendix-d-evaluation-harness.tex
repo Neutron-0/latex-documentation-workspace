@@ -1,0 +1,66 @@
+\chapter{Evaluation Harness and Mock Outputs}
+\label{app:evaluation-harness}
+
+This appendix provides a full forensic analysis of the evaluation harness located in \texttt{wolverine-sih/evaluator/}, documenting the structure of the reporting scripts and detailing the static demonstration metrics cited in early project documentation.
+
+\section{Structure of the Evaluation Module}
+The evaluation harness comprises two Python source files:
+\begin{itemize}
+    \item \texttt{evaluator/metrics.py}: Defines mathematical functions for calculating Precision, Recall, and F1 score given raw counts of True Positives ($TP$), False Positives ($FP$), and False Negatives ($FN$):
+    \begin{align}
+    \label{eq:prec-rec-f1}
+    \text{Precision} &= \frac{TP}{TP + FP} \\
+    \text{Recall} &= \frac{TP}{TP + FN} \\
+    \text{F1} &= \frac{2 \cdot \text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}
+    \end{align}
+    \item \texttt{evaluator/\_\_main\_\_.py}: The CLI entry point that emits the benchmark summary table during hackathon demonstration runs.
+\end{itemize}
+
+\section{Disclosed Static Demonstration Metrics}
+\Cref{tab:static-mock-metrics} documents the exact numerical values outputted by \texttt{evaluator/\_\_main\_\_.py}.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Disclosed Static Demonstration Metrics from Prototype Evaluator}
+\label{tab:static-mock-metrics}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Metric / Parameter} & \textbf{Demonstration Output Value} & \textbf{Forensic Classification} \\ \midrule
+\textbf{Synthetic Personas Sample} & $1{,}000$ & Configured demonstration sample size \\
+\textbf{Synthesized User Accounts} & $1{,}794$ & Synthesized cross-site accounts \\
+\textbf{Ground Truth Positive Pairs} & $1{,}205$ & Total true identity links in Truth Vault \\
+\textbf{Inferred Entity Pairs} & $597$ & Total candidate pairs exceeding threshold $S \ge 0.92$ \\
+\textbf{True Positives ($TP$)} & $554$ & \textbf{Static / Hardcoded script output} \\
+\textbf{False Positives ($FP$)} & $43$ & \textbf{Static / Hardcoded script output} \\
+\textbf{False Negatives ($FN$)} & $651$ & \textbf{Static / Hardcoded script output} \\
+\textbf{Calculated Precision} & \textbf{0.9280} ($554 / 597$) & \textbf{Derived from static counts} \\
+\textbf{Calculated Recall} & \textbf{0.4598} ($554 / 1205$) & \textbf{Derived from static counts} \\
+\textbf{Calculated F1 Score} & \textbf{0.6149} & \textbf{Derived from static counts} \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{Scientific Rationale for Disclosure}
+Forensic code audit confirms that \texttt{evaluator/\_\_main\_\_.py} does not execute SQL queries against the Truth Vault to compute confusion matrices at runtime; rather, it formats and prints the predefined values in \Cref{tab:static-mock-metrics} for terminal presentation.
+
+These values are preserved in this monograph strictly as historical documentation of the prototype's demonstration harness. They **must not** be cited as empirical performance claims.
+
+\section{Blueprint for Dynamic Evaluation Harness}
+To convert this demonstration harness into a dynamic benchmark, the evaluation script must be extended to execute the following algorithm:
+\begin{enumerate}
+    \item Connect directly to \texttt{postgres-wolverine} and extract all inferred identity pairs:
+    \begin{equation}
+    \mathcal{I} = \{ (a_i, a_j) \mid S(a_i, a_j) \ge 0.92 \}
+    \end{equation}
+    \item Connect to the air-gapped Truth Vault (\texttt{postgres-truth}) and extract the ground-truth identity mapping $\mathcal{G}$:
+    \begin{equation}
+    \mathcal{G} = \{ (a_i, a_j) \mid \text{Persona}(a_i) = \text{Persona}(a_j) \}
+    \end{equation}
+    \item Dynamically compute:
+    \begin{align}
+    TP &= |\mathcal{I} \cap \mathcal{G}| \\
+    FP &= |\mathcal{I} \setminus \mathcal{G}| \\
+    FN &= |\mathcal{G} \setminus \mathcal{I}|
+    \end{align}
+    \item Compute Precision, Recall, and F1 dynamically across all 89,605 accounts across parametric noise thresholds.
+\end{enumerate}

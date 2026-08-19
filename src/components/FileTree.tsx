@@ -44,8 +44,11 @@ export const FileTree: React.FC<FileTreeProps> = ({
   onRefresh,
 }) => {
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
+    frontmatter: true,
     chapters: true,
+    appendices: true,
     figures: true,
+    tables: true,
   });
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState<{ open: boolean; type: 'file' | 'directory'; parentDir: string }>({

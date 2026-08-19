@@ -1,0 +1,51 @@
+\chapter{Related Work and Research Context}
+\label{ch:related-work}
+
+Entity resolution, cross-platform intelligence analysis, and trustworthy analytical infrastructure draw from diverse theoretical and engineering domains. This chapter reviews the formal foundations underlying the Wolverine prototype, contextualizing its design choices within the established literature of probabilistic record linkage, string similarity metrics, graph traversal paradigms, synthetic population generation, safe retrieval-augmented language models, and cryptographic data integrity.
+
+\section{Record Linkage and Probabilistic Entity Resolution}
+\label{sec:related-record-linkage}
+The challenge of identifying records that refer to the same real-world entity across disparate databases was formalized by Fellegi and Sunter~\cite{fellegi1969theory} in their foundational mathematical model for record linkage. Under the Fellegi-Sunter framework, candidate pairs from two distinct sets $A$ and $B$ are classified into matched pairs $M$ or unmatched pairs $U$ based on a comparison vector $\gamma = [\gamma_1, \gamma_2, \dots, \gamma_K]$ representing agreement or disagreement across $K$ observable attributes.
+
+Christen~\cite{christen2012data} expands this framework to modern multi-source environments, highlighting the computational bottleneck of quadratic pair comparisons ($|A| \times |B|$) and the necessity of blocking strategies. In multi-platform intelligence ecosystems where global unique identifiers (such as national identity numbers or verified emails) are intentionally withheld or unavailable, entity resolution must rely on probabilistic matching of noisy, partial identifiers such as aliases, temporal registration windows, and localized behavioral cues.
+
+\section{String Comparator Metrics}
+\label{sec:related-string-metrics}
+In online communities, user handles frequently undergo subtle variations (e.g., character insertions, prefixing, or numerical substitutions) to bypass registration collisions or maintain partial anonymity. Standard Levenshtein edit distance treats all character operations uniformly, which often fails to capture the cognitive patterns of username mutation.
+
+To address this, Jaro~\cite{jaro1989advances} introduced a specialized metric for short strings based on the number of common characters and transpositions within a dynamic half-length window. Winkler~\cite{winkler1990string} enhanced this metric by introducing a prefix-weighting heuristic based on the observation that typographical and deliberate variations occur far less frequently in the initial characters of a token. The resulting Jaro-Winkler similarity provides the core algorithmic baseline for alias correlation in Wolverine.
+
+\section{Graph Traversal Paradigms in Intelligence Analysis}
+\label{sec:related-graph-traversal}
+Projecting multi-entity interactions into relational graphs enables analysts to discover non-obvious associations through multi-hop path traversals. In enterprise production systems, graph query engines often rely on native graph databases (e.g., Neo4j) or recursive Common Table Expressions (CTEs) executed over relational SQL adjacency tables.
+
+While enterprise systems optimize for distributed disk-backed query planners, bounded prototype systems often utilize optimized in-memory Breadth-First Search (BFS) traversals over explicit node-edge adjacency lists. In-memory traversals eliminate SQL query overhead and complex database indexing during high-throughput demonstration runs, albeit with strict memory ceilings that bound the maximum traversal depth and active graph scale.
+
+\section{Synthetic Data Generation in Benchmark Evaluation}
+\label{sec:related-synthetic-data}
+Evaluating cross-platform entity resolution in real-world threat intelligence settings is severely constrained by ethical, legal, and operational boundaries. Accessing real underground forums or handling genuine Personally Identifiable Information (PII) introduces significant privacy violations and regulatory compliance liabilities. Furthermore, real-world data lacks verifiable, objective ground truth: investigators cannot definitively prove whether two distinct forum handles belong to the same human actor without out-of-band operational intelligence.
+
+To overcome this evaluation barrier, modern research leverages deterministic synthetic population generators. By generating synthetic personas according to predefined statistical distributions and explicitly tracking their cross-platform account assignments in an isolated ground-truth registry, researchers can objectively measure precision, recall, and false-positive rates without compromising real-world privacy.
+
+\section{Retrieval-Augmented Generation and Prompt Safety}
+\label{sec:related-rag-safety}
+Retrieval-Augmented Generation (RAG), as formalized by Lewis et al.~\cite{lewis2020retrieval}, combines parametric neural generation with non-parametric retrieval from external knowledge repositories. In intelligence workflows, RAG allows Large Language Models (LLMs) to synthesize complex case dossiers grounded strictly in captured evidential records rather than relying on ungrounded internal model weights.
+
+However, ingesting untrusted text from adversarial web sources introduces severe prompt injection vulnerabilities, where malicious content embedded in forum posts or product listings attempts to override the model's system instructions~\cite{perez2022ignore}. Safe analytical systems must therefore enforce strict multi-stage input sanitization, length bounding, control character elimination, and deterministic fallback heuristics to guarantee that analytical summaries remain structured, traceable, and bounded.
+
+\section{Cryptographic Trust and State Auditing}
+\label{sec:related-cryptographic-trust}
+In sensitive forensic and investigative environments, maintaining the evidentiary integrity of analytical findings is paramount. Merkle trees~\cite{merkle1987digital} provide cryptographic proof of state inclusion and tamper-evident append-only logging through recursive cryptographic hashing. Furthermore, distributed consensus protocols, such as Practical Byzantine Fault Tolerance (PBFT) by Castro and Liskov~\cite{castro2002practical}, establish theoretical foundations for multi-party agreement across nodes even in the presence of malicious or arbitrary failures.
+
+In localized prototype systems, these mechanisms are often integrated as embedded verification libraries (e.g., hashing state transitions and generating local Merkle checkpoints), demonstrating the mathematical feasibility of tamper-evident audit trails prior to deploying full multi-node consensus networks.
+
+\section{Engineering and Integration Gaps}
+\label{sec:related-gaps}
+Existing literature provides robust solutions for isolated components: statistical record linkage, string comparison metrics, synthetic data simulation, and LLM guardrails. However, an integration gap exists in unifying these disparate layers into an end-to-end, zero-knowledge testbed where:
+\begin{enumerate}
+    \item A completely isolated, multi-stack synthetic ecosystem generates heterogeneous traffic over independent platforms;
+    \item A multi-stage collection and canonical normalization pipeline ingests varied payload formats (REST, JSON:API, GraphQL, HTML) without schema assumptions;
+    \item An automated entity resolution engine probabilistically links identities while an air-gapped Truth Vault maintains objective ground truth strictly isolated from the inference pipeline; and
+    \item A sanitized RAG assistant synthesizes case narratives with deterministic fallback guarantees.
+\end{enumerate}
+The Wolverine SIH prototype addresses this engineering integration challenge by demonstrating a functional, bounded realization of this multi-tier architecture.

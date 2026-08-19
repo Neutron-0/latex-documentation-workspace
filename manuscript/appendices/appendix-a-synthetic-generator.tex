@@ -1,0 +1,54 @@
+\chapter{Synthetic Generation Specifications}
+\label{app:synthetic-generator}
+
+This appendix provides the technical specifications, distribution models, and algorithmic parameters governing the deterministic Synthetic Population Generator (\texttt{generator/src/generator/engine.py}).
+
+\section{Master Configuration Parameters}
+The generator behavior is controlled by the parameters specified in \Cref{tab:generator-config}.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Synthetic World Engine Configuration Parameters}
+\label{tab:generator-config}
+\begin{tabular}{@{}lllp{5.5cm}@{}}
+\toprule
+\textbf{Parameter Name} & \textbf{Type} & \textbf{Default Value} & \textbf{Operational Description} \\ \midrule
+\texttt{master\_seed} & Integer & $42$ & Root seed for pseudorandom number generation. \\ \addlinespace
+\texttt{target\_persons} & Integer & $50{,}000$ & Total canonical human personas to synthesize. \\ \addlinespace
+\texttt{mutation\_rate} & Float & $0.35$ & Probability of handle mutation for secondary accounts. \\ \addlinespace
+\texttt{noise\_rate} & Float & $0.05$ & Proportion of randomized false links injected. \\ \addlinespace
+\texttt{output\_format} & String & \texttt{"sql"} & Target serialization format (PostgreSQL/MySQL). \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{Cross-Site Account Allocation Distribution}
+Let $P$ be a canonical persona. The number of active platform accounts assigned to $P$ follows the discrete empirical probability mass function:
+\begin{equation}
+\label{eq:account-distribution}
+\Pr(|\text{Accounts}(P)| = k) = \begin{cases}
+0.50 & \text{if } k = 1 \quad (\text{Single-site user}) \\
+0.30 & \text{if } k = 2 \quad (\text{Dual-site presence}) \\
+0.14 & \text{if } k = 3 \quad (\text{Multi-site presence}) \\
+0.06 & \text{if } k \in \{4, 5\} \quad (\text{High-entropy power user})
+\end{cases}
+\end{equation}
+
+\section{Handle Mutation Rules}
+When persona $P$ with primary handle $h$ registers an account on a secondary platform, the mutation engine applies one of four deterministic variation transformations with probability $p = 0.35$:
+\begin{enumerate}
+    \item \textbf{Suffixing:} $h' = h + \text{"\_"} + \text{random\_alphanumeric}(2)$ (e.g., \texttt{"shadow"} $\to$ \texttt{"shadow\_99"}).
+    \item \textbf{Prefixing:} $h' = \text{"real\_"} + h$ or $\text{"the\_"} + h$ (e.g., \texttt{"shadow"} $\to$ \texttt{"real\_shadow"}).
+    \item \textbf{Punctuation Substitution:} Replaces underscores with dots or hyphens (e.g., \texttt{"shadow\_runner"} $\to$ \texttt{"shadow.runner"}).
+    \item \textbf{Vowel Dropping:} Drops interior vowels with 15\% chance (e.g., \texttt{"shadow"} $\to$ \texttt{"shdw"}).
+\end{enumerate}
+
+\section{Site-Specific Primary Key Schemas}
+To simulate realistic platform heterogeneity, each application utilizes a distinct primary key format:
+\begin{itemize}
+    \item \textbf{Atlas Market:} Universally Unique Lexicographically Sortable Identifiers (ULID, 26 characters).
+    \item \textbf{Briar Bazaar:} Auto-incrementing 64-bit BigInt sequences.
+    \item \textbf{Cinder Exchange:} RFC 4122 Version 4 UUIDs (36 characters).
+    \item \textbf{Drift Forum:} Custom formatted alphanumeric string (\texttt{"DRFT-" + hash}).
+    \item \textbf{Ember Commons:} Hex-encoded Ed25519 public key digests (64 hex characters).
+\end{itemize}

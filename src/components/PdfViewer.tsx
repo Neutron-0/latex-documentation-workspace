@@ -29,7 +29,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   return (
     <div
       className={`flex flex-col bg-editor-bg border-l border-editor-border transition-all select-none ${
-        isFullscreen ? 'fixed inset-0 z-50 bg-black/90' : 'w-1/2 h-full'
+        isFullscreen ? 'fixed inset-0 z-50 bg-black/95' : 'w-1/2 h-full'
       }`}
     >
       {/* PDF Header Controls */}
@@ -89,12 +89,19 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* PDF Frame / Empty State */}
       <div className="flex-1 w-full h-full bg-[#1e1e24] relative overflow-hidden flex items-center justify-center">
         {pdfUrl ? (
-          <iframe
+          <object
             key={pdfUrl}
-            src={`${pdfUrl}#toolbar=0&navpanes=0`}
+            data={`${pdfUrl}#view=FitH`}
+            type="application/pdf"
             className="w-full h-full border-0"
-            title="LaTeX PDF Preview"
-          />
+            aria-label="LaTeX PDF Preview"
+          >
+            <iframe
+              src={`${pdfUrl}#view=FitH`}
+              className="w-full h-full border-0"
+              title="LaTeX PDF Preview"
+            />
+          </object>
         ) : (
           <div className="text-center p-8 text-editor-muted max-w-sm">
             <div className="w-12 h-12 rounded-2xl bg-editor-surface flex items-center justify-center mx-auto mb-3 border border-editor-border">

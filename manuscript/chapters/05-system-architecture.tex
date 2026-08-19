@@ -1,0 +1,160 @@
+\chapter{System Architecture}
+\label{ch:system-architecture}
+
+This chapter details the system architecture of the Wolverine platform, establishing the structural separation between the untrusted synthetic public ecosystem and the secure analyst workstation. It documents the component architecture, the complete 14-container microservice topology, network isolation boundaries, the end-to-end data pipeline, and the exact roles of the presentation and cryptographic trust layers.
+
+\section{Architectural Overview and Environment Separation}
+\label{sec:arch-overview}
+The Wolverine platform is architected around a strict \textbf{Two-Environment Model} designed to emulate real-world intelligence operations within a self-contained, reproducible environment:
+
+\begin{enumerate}
+    \item \textbf{The Public Synthetic Ecosystem:} A network of five heterogeneous web applications representing disparate threat domains (dark web marketplaces, forums, escrow exchanges). These applications run on independent technology stacks with dedicated backend databases, exposed via a rate-limited Tor gateway.
+    \item \textbf{The Local Analyst Workstation:} The private analytical core comprising the automated collection adapters, format normalizers, entity resolution engine, in-memory graph projector, sanitized RAG assistant, Wolverine REST API, and the air-gapped Truth Vault.
+\end{enumerate}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=1.2cm and 1.5cm,
+    box/.style={rectangle, draw=black!70, fill=blue!5, rounded corners=2pt, minimum width=2.8cm, minimum height=0.9cm, align=center, font=\small},
+    db/.style={cylinder, shape border rotate=90, draw=black!70, fill=yellow!20, aspect=0.25, minimum width=2.2cm, minimum height=0.9cm, align=center, font=\small},
+    netbox/.style={rectangle, draw=black!40, dashed, fill=gray!5, rounded corners=4pt, inner sep=8pt},
+    arrow/.style={-{Stealth[scale=1.0]}, thick, draw=black!70}
+]
+
+% Public Ecosystem
+\node[box, fill=purple!10] (sites) {\textbf{5 Heterogeneous Sites}\\(Node, Django, PHP, Go, Rust)};
+\node[db, below=0.6cm of sites] (sitedb) {\textbf{Source DBs}\\(Postgres, MySQL)};
+\node[box, right=1.2cm of sites, fill=red!10] (torgw) {\textbf{Tor Gateway}\\(Nginx Proxy)};
+
+% Wolverine Core
+\node[box, right=1.5cm of torgw, fill=cyan!10] (collector) {\textbf{Collector \& Parser}\\(Normalization)};
+\node[box, below=0.6cm of collector, fill=cyan!10] (resolver) {\textbf{Entity Resolver}\\(Jaro-Winkler)};
+\node[box, right=1.2cm of collector, fill=cyan!10] (graph) {\textbf{In-Memory Graph}\\(BFS Projector)};
+\node[box, below=0.6cm of graph, fill=cyan!10] (rag) {\textbf{Sanitized RAG}\\(Ollama / Llama-3.2)};
+
+% Storage & Truth
+\node[db, below=1.8cm of resolver, fill=green!20] (truth) {\textbf{Truth Vault DB}\\(\texttt{internal: true})};
+\node[box, right=1.2cm of graph, fill=blue!15] (api) {\textbf{Wolverine API}\\(Express)};
+\node[box, above=0.6cm of api, fill=blue!15] (ui) {\textbf{Analyst UI}\\(React / Vite)};
+
+% Connections
+\draw[arrow] (sites) -- (sitedb);
+\draw[arrow] (sites) -- node[above, font=\scriptsize] {HTTP} (torgw);
+\draw[arrow] (torgw) -- node[above, font=\scriptsize] {Captures} (collector);
+\draw[arrow] (collector) -- node[right, font=\scriptsize] {Canonical} (resolver);
+\draw[arrow] (resolver) -- node[above, font=\scriptsize] {Edges} (graph);
+\draw[arrow] (graph) -- (api);
+\draw[arrow] (rag) -- (api);
+\draw[arrow] (api) -- (ui);
+\draw[arrow, dashed, draw=red!70] (truth) -- node[right, font=\scriptsize] {Eval Only (Isolated)} (resolver);
+
+% Background Groups
+\begin{scope}[on background layer]
+    \node[netbox, fit=(sites) (sitedb) (torgw), label={[font=\footnotesize\bfseries, text=purple!80]above:Public Synthetic Ecosystem (\texttt{wolverine-dmz})}] (group1) {};
+    \node[netbox, fit=(collector) (resolver) (graph) (rag) (api) (ui), label={[font=\footnotesize\bfseries, text=cyan!80]above:Wolverine Analyst Workstation (\texttt{wolverine-internal})}] (group2) {};
+    \node[netbox, fit=(truth), label={[font=\footnotesize\bfseries, text=green!60!black]below:Air-Gapped Vault (\texttt{wolverine-truth})}] (group3) {};
+\end{scope}
+
+\end{tikzpicture}
+\caption{Wolverine Two-Environment System Topology and Trust Boundaries}
+\label{fig:env-topology}
+\end{figure}
+
+\section{Component Architecture}
+\label{sec:arch-components}
+The platform partitions responsibilities across decoupled subsystems:
+
+\subsection{Heterogeneous Source Applications}
+To simulate genuine protocol heterogeneity, five distinct web applications operate within the public ecosystem:
+\begin{itemize}
+    \item \textbf{Atlas Market:} An escrow-based marketplace implemented in Node.js and Express, backed by PostgreSQL (\texttt{atlas\_market}).
+    \item \textbf{Briar Bazaar:} A server-side rendered marketplace in Python and Django, using PostgreSQL (\texttt{briar\_bazaar}).
+    \item \textbf{Cinder Exchange:} A cryptocurrency exchange adhering to the JSON:API standard, built on PHP and Laravel with MySQL 8.4 (\texttt{cinder\_exchange}).
+    \item \textbf{Drift Forum:} A multi-category discussion forum written in Go (Chi router), using PostgreSQL (\texttt{drift\_forum}) and Redis for session caching.
+    \item \textbf{Ember Commons:} A decentralized micro-bulletin service written in Rust (Axum framework) exposing a GraphQL feed backed by PostgreSQL (\texttt{ember\_commons}).
+\end{itemize}
+
+\subsection{Ingestion and Normalization Subsystem}
+The ingestion layer executes in \texttt{wolverine/src/}:
+\begin{itemize}
+    \item \textbf{Collector Adapters (\texttt{collector/adapters.ts}):} Dispatches asynchronous HTTP requests to individual site endpoints via the Tor gateway proxy. Raw response bodies are archived in MinIO (S3-compatible bucket \texttt{captures}).
+    \item \textbf{Normalization Parsers (\texttt{normalizer/parsers.ts}):} Five dedicated parsers map format-specific payloads (HTML DOM via Cheerio, JSON, JSON:API, GraphQL) into standardized Canonical Records tagged with deterministic SHA-256 identifiers.
+\end{itemize}
+
+\subsection{Entity Resolution and Graph Engine}
+\begin{itemize}
+    \item \textbf{Entity Resolver (\texttt{resolver/entity\_resolver.ts}):} Implements multi-feature comparison across cross-site candidate pairs.
+    \item \textbf{In-Memory Graph Projector (\texttt{graph/projector.ts}):} Projects normalized accounts, listings, and resolved linkages into an in-memory graph structure (\texttt{Map<string, GraphNode>}, \texttt{Map<string, GraphEdge>}) supporting depth-bounded BFS multi-hop traversals.
+\end{itemize}
+
+\section{Container Topology and Microservices}
+\label{sec:arch-containers}
+The entire platform is defined in \texttt{docker-compose.yml} and hardened in \texttt{docker-compose.prod.yml}, comprising exactly 14 containerized services. \Cref{tab:container-topology} outlines the complete container arrangement.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Wolverine Platform 14-Container Deployment Topology}
+\label{tab:container-topology}
+\begin{tabular}{@{}llllp{4.2cm}@{}}
+\toprule
+\textbf{Container Service} & \textbf{Base Image / Stack} & \textbf{Port} & \textbf{Network} & \textbf{Operational Role} \\ \midrule
+\texttt{postgres-sites} & PostgreSQL 16 Alpine & 5432 & Internal & Shared DB for Atlas, Briar, Drift, Ember \\
+\texttt{mysql-site-c} & MySQL 8.4 & 3306 & Internal & Relational store for Cinder Exchange \\
+\texttt{redis} & Redis 7.2 Alpine & 6379 & Internal & Event streaming \& Drift caching \\
+\texttt{minio} & MinIO S3 & 9000 & Internal & Object storage for raw HTTP captures \\
+\texttt{postgres-wolverine} & PostgreSQL 16 Alpine & 5433 & Internal & Analytical store for canonical records \\
+\texttt{postgres-truth} & PostgreSQL 16 Alpine & 5434 & Truth & Isolated Ground Truth Vault registry \\ \addlinespace
+\texttt{atlas-market} & Node.js 20 / Express & 3001 & DMZ/Int & Synthetic escrow market application \\
+\texttt{briar-bazaar} & Python 3.11 / Django & 3002 & DMZ/Int & Synthetic vendor market application \\
+\texttt{cinder-exchange} & PHP 8.2 / Laravel & 3003 & DMZ/Int & Synthetic exchange application \\
+\texttt{drift-forum} & Go 1.22 / Chi & 3004 & DMZ/Int & Synthetic discussion forum application \\
+\texttt{ember-commons} & Rust 1.78 / Axum & 3005 & DMZ/Int & Synthetic bulletin GraphQL service \\ \addlinespace
+\texttt{wolverine-api} & Node.js 20 / Express & 4000 & DMZ/Int & Core analytical REST API \& RAG \\
+\texttt{analyst-ui} & React 18 / Vite & 80/443 & DMZ & Functional analyst web interface \\
+\texttt{tor-gateway} & Nginx 1.25 Alpine & 8088 & DMZ & Ingress proxy \& Tor Onion Service bridge \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{Network Isolation and Trust Boundaries}
+\label{sec:arch-network-isolation}
+Network security is enforced using three isolated Docker bridge networks:
+\begin{enumerate}
+    \item \texttt{wolverine-dmz}: Handles external ingress, routing incoming analyst traffic to \texttt{analyst-ui} and proxying synthetic requests through \texttt{tor-gateway}.
+    \item \texttt{wolverine-internal}: Interconnects the collection pipeline, source databases, cache, and the analytical engine.
+    \item \texttt{wolverine-truth}: Configured with \texttt{internal: true}. This network has no default gateway, preventing any container on this network from communicating with the internet or the \texttt{wolverine-internal} network. Only the offline evaluation harness can attach to this network to compute benchmark statistics.
+\end{enumerate}
+
+\section{Data Lifecycle and End-to-End Pipeline}
+\label{sec:arch-data-lifecycle}
+The data lifecycle flows through eight discrete phases:
+\begin{enumerate}
+    \item \textbf{Synthetic Population Seeding:} The Python generation engine populates source databases with personas, listings, transactions, and messages.
+    \item \textbf{Live Activity Simulation:} Simulated actors execute transactions, post forum replies, and advance escrow states.
+    \item \textbf{HTTP Ingestion:} Wolverine collectors query target endpoints through the Tor gateway.
+    \item \textbf{Raw Archival:} Raw response streams are hashed (SHA-256) and saved in MinIO object storage.
+    \item \textbf{Canonical Parsing:} Format-specific parsers validate schemas and instantiate typed records.
+    \item \textbf{Entity Resolution:} Candidate pairs are evaluated against Jaro-Winkler and temporal models.
+    \item \textbf{Graph Projection:} Nodes and edges are inserted into the in-memory BFS graph.
+    \item \textbf{Analyst Interaction:} Analysts query the graph and submit RAG questions via the UI.
+\end{enumerate}
+
+\section{Presentation Layer Separation: Vzeya vs. Analyst UI}
+\label{sec:arch-frontend}
+The workspace contains two distinct user-interface codebases that serve fundamentally different purposes:
+
+\begin{itemize}
+    \item \textbf{Analyst UI (\texttt{wolverine-sih/analyst-ui}):} The \textit{functional} analytical interface implemented in React and Vite. It connects directly to \texttt{wolverine-api} (port 4000) to execute live graph queries, inspect canonical records, trigger collection cycles, and review resolution candidates.
+    \item \textbf{Vzeya (\texttt{d:\textbackslash Vault\textbackslash Vzeya}):} A Next.js 15 cinematic \textit{visual demonstration} layer. Vzeya contains advanced WebGL shader pipelines (CRT post-processing), 3D scenes, and interactive HUDs. However, forensic code inspection verifies that Vzeya has no backend API routes (\texttt{src/app/api/} is absent) and no database drivers. It operates purely on static in-memory data arrays for concept demonstration and visual storytelling.
+\end{itemize}
+
+\section{WolverineDB: Cryptographic Trust Layer Status}
+\label{sec:arch-wolverinedb}
+\texttt{wolverine-db} is an independent cryptographic middleware module comprising 139 TypeScript source files. Its architectural role is to provide verifiable state immutability for analytical records:
+
+\begin{itemize}
+    \item \textbf{Implemented Capabilities:} Formal specification framework (RFC 6962 Merkle trees, RFC 8785 JSON canonicalization), SQLite and PostgreSQL change-data-capture trigger schemas (\texttt{wolverine\_sys.change\_history}), and Ed25519 cryptographic approval verification.
+    \item \textbf{Prototype Simulation Boundaries:} Forensic analysis confirms that the inter-node network transport is implemented via in-process memory queues (\texttt{DirectMemoryNetworkTransport}), hardware security module (HSM/KMS) signing is simulated, and EVM anchoring operates against an in-memory registry map (\texttt{src/anchors/evm.ts}) rather than live Web3 RPC nodes.
+\end{itemize}
+Documenting these boundaries clarifies that while the cryptographic primitives and schemas are fully verified in code, multi-node distributed consensus is evaluated in an in-process simulation harness.

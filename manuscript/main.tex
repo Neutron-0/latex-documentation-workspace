@@ -1,0 +1,72 @@
+\documentclass[11pt,a4paper,twoside,openright]{report}
+
+% Essential packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{titlesec}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{cite} % Traditional BibTeX
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows.meta,positioning,calc,fit,backgrounds}
+
+% References & Linking
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{cleveref}
+
+% Formatting
+\pagestyle{fancy}
+\fancyhead{}
+\fancyhead[LE,RO]{\thepage}
+\fancyhead[LO,RE]{\leftmark}
+\fancyfoot{}
+
+\begin{document}
+
+% Front Matter
+\include{frontmatter/titlepage}
+\pagenumbering{roman}
+\include{frontmatter/abstract}
+\include{frontmatter/acknowledgements}
+\include{frontmatter/abbreviations}
+
+\tableofcontents
+\listoffigures
+\listoftables
+\clearpage
+
+% Main Content
+\pagenumbering{arabic}
+\include{chapters/01-introduction}
+\include{chapters/02-foundations}
+\include{chapters/03-related-work}
+\include{chapters/04-requirements-threat-model}
+\include{chapters/05-system-architecture}
+\include{chapters/06-data-architecture}
+\include{chapters/07-analytical-methodology}
+\include{chapters/08-implementation}
+\include{chapters/09-experimental-environment}
+\include{chapters/10-evaluation}
+\include{chapters/11-security-ethics}
+\include{chapters/12-discussion}
+\include{chapters/13-future-work}
+\include{chapters/14-conclusion}
+
+% Appendices
+\appendix
+\include{appendices/appendix-a-synthetic-generator}
+\include{appendices/appendix-b-api-specifications}
+\include{appendices/appendix-c-wolverine-db-specifications}
+\include{appendices/appendix-d-evaluation-harness}
+
+% Bibliography
+\bibliographystyle{ieeetr}
+\bibliography{bibliography}
+
+\end{document}

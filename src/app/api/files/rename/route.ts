@@ -2,32 +2,32 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { safeResolve, ensureDir } from '@/lib/utils/filesystem';
-
-const WORKSPACE_DIR = path.join(process.cwd(), 'workspace');
+import { getWorkspaceDir } from '@/lib/project';
 
 export async function POST(req: Request) {
   try {
-    const { oldPath: oldRelPath, newPath: newRelPath } = await req.json();
+    const { oldPath, newPath } = await req.json();
 
-    if (!oldRelPath || !newRelPath) {
-      return NextResponse.json({ success: false, error: 'oldPath and newPath are required' }, { status: 400 });
+    if (!oldPath || !newPath) {
+      return NextResponse.json({ success: false, error: 'Both oldPath and newPath are required' }, { status: 400 });
     }
 
-    const source = safeResolve(WORKSPACE_DIR, oldRelPath);
-    const target = safeResolve(WORKSPACE_DIR, newRelPath);
+    const workspaceDir = getWorkspaceDir();
+    const source = safeResolve(workspaceDir, oldPath);
+    const target = safeResolve(workspaceDir, newPath);
 
     if (!fs.existsSync(source)) {
-      return NextResponse.json({ success: false, error: 'Source item does not exist' }, { status: 404 });
+      return NextResponse.json({ success: false, error: 'Source path does not exist' }, { status: 404 });
     }
 
     if (fs.existsSync(target)) {
-      return NextResponse.json({ success: false, error: 'Target path already exists' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Target path already exists' }, { status: 409 });
     }
 
     ensureDir(path.dirname(target));
     fs.renameSync(source, target);
 
-    return NextResponse.json({ success: true, oldPath: oldRelPath, newPath: newRelPath });
+    return NextResponse.json({ success: true, message: 'Renamed successfully' });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

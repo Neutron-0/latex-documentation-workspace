@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { safeResolve, ensureDir } from '@/lib/utils/filesystem';
-
-const WORKSPACE_DIR = path.join(process.cwd(), 'workspace');
+import { getWorkspaceDir } from '@/lib/project';
 
 export async function POST(req: Request) {
   try {
@@ -13,7 +12,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Path and content string are required' }, { status: 400 });
     }
 
-    const filePath = safeResolve(WORKSPACE_DIR, relPath);
+    const workspaceDir = getWorkspaceDir();
+    const filePath = safeResolve(workspaceDir, relPath);
     ensureDir(path.dirname(filePath));
     fs.writeFileSync(filePath, content, 'utf8');
 

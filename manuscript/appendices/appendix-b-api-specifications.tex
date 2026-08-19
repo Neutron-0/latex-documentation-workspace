@@ -1,0 +1,67 @@
+\chapter{API Specifications and Protocol Interfaces}
+\label{app:api-specifications}
+
+This appendix documents the primary RESTful API endpoints exposed by the analytical backend (\texttt{wolverine-api}, port 4000) for consumption by the Analyst UI and automated orchestration scripts.
+
+\section{Authentication and Role Headers}
+The API implements role-based access control via custom HTTP request headers:
+\begin{itemize}
+    \item \texttt{X-Wolverine-Role}: Designates permissions (\texttt{"analyst"}, \texttt{"reviewer"}, \texttt{"admin"}).
+    \item \texttt{X-Synthetic-Research}: Enforced boolean header (\texttt{"true"}) confirming execution within the synthetic research testbed.
+\end{itemize}
+
+\section{Core Operational Endpoints}
+\Cref{tab:api-endpoints} summarizes the verified API routes implemented in \texttt{wolverine/src/api/server.ts}.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Wolverine Analytical Backend REST API Routes}
+\label{tab:api-endpoints}
+\begin{tabular}{@{}llp{8.0cm}@{}}
+\toprule
+\textbf{HTTP Method} & \textbf{Endpoint Path} & \textbf{Function \& Response Payload} \\ \midrule
+\texttt{GET} & \texttt{/health} & Service health check; returns uptime and connected database status. \\ \addlinespace
+\texttt{GET} & \texttt{/v1/records} & Queries paginated Canonical Records with filter parameters (\texttt{siteId}, \texttt{kind}, \texttt{since}). \\ \addlinespace
+\texttt{GET} & \texttt{/v1/records/:id} & Retrieves single Canonical Record including full provenance and raw SHA-256 capture hashes. \\ \addlinespace
+\texttt{POST} & \texttt{/v1/graph/query} & Executes in-memory BFS graph query from seed \texttt{nodeId} up to \texttt{maxDepth} (capped at 4). Returns nodes and edges. \\ \addlinespace
+\texttt{POST} & \texttt{/v1/analysis/query} & Submits sanitized analyst prompt to RAG engine; returns structured analytical hypothesis JSON with citations. \\ \addlinespace
+\texttt{GET} & \texttt{/v1/candidates} & Returns candidate entity resolution pairs pending review ($0.70 \le S < 0.92$). \\ \addlinespace
+\texttt{POST} & \texttt{/v1/candidates/:id/decision} & Records manual analyst decision (\texttt{"APPROVE"} / \texttt{"REJECT"}) with audit timestamp. \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{Graph Query Request and Response Schema}
+\subsection{Request Schema (\texttt{POST /v1/graph/query})}
+\begin{verbatim}
+{
+  "seedNodeId": "urn:wolverine:account:atlas:01HQV5E72W...",
+  "maxDepth": 3,
+  "minConfidence": 0.70,
+  "edgeTypes": ["AUTHORED", "POSSIBLE_SAME_AS", "INTERACTED_WITH"]
+}
+\end{verbatim}
+
+\subsection{Response Schema}
+\begin{verbatim}
+{
+  "nodes": [
+    {
+      "id": "urn:wolverine:account:atlas:01HQV5E72W...",
+      "label": "shadow_runner",
+      "siteId": "atlas_market",
+      "kind": "account"
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge:atlas:briar:01HQ...",
+      "source": "urn:wolverine:account:atlas:01HQV5E72W...",
+      "target": "urn:wolverine:account:briar:10492",
+      "type": "POSSIBLE_SAME_AS",
+      "confidence": 0.942
+    }
+  ],
+  "executionTimeMs": 1.24
+}
+\end{verbatim}

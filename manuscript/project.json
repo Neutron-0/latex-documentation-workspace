@@ -1,0 +1,9 @@
+{
+  "name": "Wolverine SIH Technical Monograph",
+  "projectDir": "manuscript",
+  "rootFile": "main.tex",
+  "compiler": "tectonic",
+  "autoBuild": false,
+  "synctex": true,
+  "buildDir": ".build"
+}

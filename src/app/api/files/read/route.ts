@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
-import path from 'path';
 import { safeResolve } from '@/lib/utils/filesystem';
-
-const WORKSPACE_DIR = path.join(process.cwd(), 'workspace');
+import { getWorkspaceDir } from '@/lib/project';
 
 export async function GET(req: Request) {
   try {
@@ -14,7 +12,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: false, error: 'Path query param is required' }, { status: 400 });
     }
 
-    const filePath = safeResolve(WORKSPACE_DIR, relPath);
+    const workspaceDir = getWorkspaceDir();
+    const filePath = safeResolve(workspaceDir, relPath);
     if (!fs.existsSync(filePath)) {
       return NextResponse.json({ success: false, error: 'File not found' }, { status: 404 });
     }

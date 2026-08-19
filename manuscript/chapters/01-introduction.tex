@@ -1,0 +1,47 @@
+\chapter{Introduction}
+\label{ch:introduction}
+
+The fragmentation of online communities has inadvertently created isolated silos of user behavior, identity, and moderation. When individuals interact across heterogeneous platforms---ranging from clear web forums to decentralized marketplaces---their digital footprints are fractured. For intelligence analysts, trust and safety teams, and law enforcement, this poses a critical challenge: bad actors can exploit the boundary lines between distinct moderation regimes to obfuscate their activities, knowing that reputation and threat indicators rarely cross platform borders.
+
+\section{Problem Context}
+\label{sec:intro-problem}
+The core problem addressed by the Wolverine project is the inability to securely and accurately trace threat actors across structurally independent platforms. In real-world environments, each platform enforces its own data schema, access controls, and moderation policies. This isolation means that an entity exhibiting malicious behavior on one forum may simultaneously maintain a pristine reputation on an adjacent marketplace. The lack of cross-platform visibility severely hinders the proactive identification of coordinated campaigns, illicit supply chains, and distributed threat networks.
+
+\section{Motivation}
+\label{sec:intro-motivation}
+Bridging this visibility gap requires a mechanism to correlate identities across boundaries without necessarily relying on explicit personally identifiable information (PII). However, building such a system in a production environment introduces immense technical and ethical complexities, ranging from massive data normalization bottlenecks to privacy and data sovereignty concerns. The motivation for the Wolverine Smart India Hackathon (SIH) prototype is to create a deterministic, bounded environment to model and demonstrate how cross-platform identity resolution could operate heuristically on disparate intelligence streams.
+
+\section{Objectives}
+\label{sec:intro-objectives}
+The Wolverine project was designed with the following technical objectives:
+\begin{itemize}
+    \item \textbf{Synthetic Ecosystem Construction:} Generate and operate a controlled, closed-loop ecosystem of five heterogeneous platforms (using diverse technology stacks) to serve as intelligence sources.
+    \item \textbf{Data Normalization Pipeline:} Ingest raw, semi-structured JSON payloads from these isolated platforms and map them to a canonical intelligence schema.
+    \item \textbf{Heuristic Entity Resolution:} Implement algorithmic similarity scoring (such as Jaro-Winkler string distance) to probabilistically link user aliases and digital artifacts across the platforms.
+    \item \textbf{Analyst Augmentation:} Provide a unified, read-only analyst interface integrated with a sanitized Retrieval-Augmented Generation (RAG) subsystem to summarize findings deterministically.
+\end{itemize}
+
+\section{Scope and Prototype Constraints}
+\label{sec:intro-scope}
+It is critical to explicitly define the boundaries of the Wolverine prototype. The system was engineered specifically as an interactive demonstration for the SIH evaluation rather than a production-ready intelligence platform. 
+
+Consequently, several operational constraints apply:
+\begin{itemize}
+    \item \textbf{Synthetic Data:} The entire ecosystem operates on a synthetic dataset of 50,000 personas; no real-world, live OSINT (Open Source Intelligence) data is ingested.
+    \item \textbf{In-Memory Processing:} While the architecture theorizes advanced PostgreSQL recursive CTEs for graph traversal, the verified implementation relies on an in-memory Breadth-First Search (BFS) bounded by a single host's memory.
+    \item \textbf{Simulated Evaluation:} Evaluation metrics (e.g., F1 scores and precision) presented in the project documentation are static, hardcoded outputs from a mock evaluation harness rather than dynamically calculated performance measures.
+\end{itemize}
+These limitations are deliberately documented to ensure academic honesty and to separate the conceptual architecture from the implemented demonstration reality.
+
+\section{Contributions}
+\label{sec:intro-contributions}
+Despite its prototype constraints, the Wolverine project makes the following demonstrative contributions:
+\begin{enumerate}
+    \item A fully executable, 14-container Docker ecosystem simulating a fragmented dark web/clear web environment.
+    \item An 11-phase deterministic data generation pipeline capable of constructing coherent, cross-platform behavioral footprints.
+    \item A functional heuristic entity resolution pipeline that normalizes arbitrary social data into a canonical graph format.
+\end{enumerate}
+
+\section{Organization of the Report}
+\label{sec:intro-organization}
+The remainder of this report is organized as follows. \Cref{ch:foundations} establishes the domain and technical foundations of cross-platform intelligence. \Cref{ch:related-work} reviews related work in entity resolution and synthetic data generation. \Cref{ch:requirements-threat-model} outlines the system requirements and threat models governing the prototype. \Cref{ch:system-architecture} and \Cref{ch:data-architecture} detail the overarching system topology and the Wolverine Database design, respectively. \Cref{ch:analytical-methodology} dissects the implemented heuristic algorithms and LLM integrations. \Cref{ch:implementation,ch:experimental-environment} describe the concrete implementation details and the synthetic demonstration environment. \Cref{ch:evaluation,ch:security-ethics} analyze the evaluation framework and ethical constraints. Finally, \Cref{ch:discussion,ch:future-work,ch:conclusion} provide a critical discussion, outline future directions for scaling, and conclude the report.

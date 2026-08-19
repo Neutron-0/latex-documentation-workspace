@@ -1,0 +1,132 @@
+\chapter{Data Architecture and Database System}
+\label{ch:data-architecture}
+
+The Wolverine platform integrates multiple database paradigms across its dual-environment topology. This chapter presents the data architecture, detailing the heterogeneous data sources, the canonical normalization schema, the end-to-end data lifecycle, the 14-container database topology, the verified capabilities and simulation boundaries of WolverineDB, and the cryptographic data trust model.
+
+\section{Data Sources and Modalities}
+\label{sec:data-sources}
+To evaluate entity resolution without violating real-world privacy or legal boundaries, the platform operates entirely on structured synthetic datasets generated across five distinct platform archetypes:
+
+\begin{itemize}
+    \item \textbf{Atlas Market (Escrow Marketplace):} Operates on PostgreSQL 16 (\texttt{atlas\_market}). Data models include user profiles (identified by ULIDs), vendor listings, multi-signature escrow orders (7 lifecycle states), and buyer-seller dispute tickets.
+    \item \textbf{Briar Bazaar (Vendor Marketplace):} Operates on PostgreSQL 16 (\texttt{briar\_bazaar}). Modeled in Django ORM with sequential integer primary keys, representing vendor shops, product reviews, and server-side rendered HTML listings.
+    \item \textbf{Cinder Exchange (Cryptocurrency Exchange):} Operates on MySQL 8.4 (\texttt{cinder\_exchange}). Exposes data compliant with the JSON:API specification, storing user wallets, deposit addresses (synthetic testnet hashes), order books, and trade settlement logs.
+    \item \textbf{Drift Forum (Discussion Board):} Operates on PostgreSQL 16 (\texttt{drift\_forum}) and Redis 7.2. Models hierarchical forum categories, discussion threads, paginated posts, and user reputation scores.
+    \item \textbf{Ember Commons (Decentralized Bulletin):} Operates on PostgreSQL 16 (\texttt{ember\_commons}). Exposes a GraphQL API over micro-bulletin feeds, author public keys, and cryptographic message hashes.
+\end{itemize}
+
+\section{Canonical Data Representation}
+\label{sec:data-canonical}
+Raw observations ingested from heterogeneous sources cannot be directly correlated due to incompatible data formats (HTML DOM, JSON:API, GraphQL, REST). Wolverine resolves this through an intermediary \textbf{Canonical Record Schema} defined in \texttt{@wolverine/shared-types}.
+
+\subsection{Canonical Record Structure}
+Every observable artifact is normalized into one of six canonical types: \texttt{CanonicalAccountRecord}, \texttt{CanonicalListingRecord}, \texttt{CanonicalOrderRecord}, \texttt{CanonicalMessageRecord}, \texttt{CanonicalThreadRecord}, or \texttt{CanonicalPostRecord}.
+
+Every canonical record $R$ enforces the standardized schema structure:
+\begin{equation}
+\label{eq:canonical-record}
+R = \langle \text{recordId}, \text{schemaVersion}, \text{kind}, \text{source}, \text{observedAt}, \text{occurredAt}, \text{attributes}, \text{relationships}, \text{provenance}, \text{classification} \rangle
+\end{equation}
+
+Where:
+\begin{itemize}
+    \item $\text{recordId} \in \{0,1\}^{256}$: A deterministic UUID generated via SHA-256 hashing of the compound key: \texttt{siteId:kind:sourceRecordId}.
+    \item $\text{source} = \langle \text{siteId}, \text{sourceRecordId}, \text{locator} \rangle$: Identifies the originating application, upstream primary key, and URL path.
+    \item $\text{provenance} = \langle \text{captureId}, \text{rawSha256}, \text{parserVersion} \rangle$: Cryptographically binds the canonical record to the raw capture stored in MinIO.
+    \item $\text{classification}$: Set universally to the immutable literal \texttt{"synthetic-research"}.
+\end{itemize}
+
+\section{Data Lifecycle}
+\label{sec:data-lifecycle}
+The data lifecycle flows deterministically through eight discrete pipeline stages, as illustrated in \Cref{fig:data-lifecycle}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.9cm and 0.8cm,
+    stepbox/.style={rectangle, draw=black!70, fill=cyan!10, rounded corners=2pt, minimum width=3.2cm, minimum height=0.75cm, align=center, font=\footnotesize},
+    storebox/.style={cylinder, shape border rotate=90, draw=black!70, fill=yellow!20, aspect=0.25, minimum width=2.0cm, minimum height=0.75cm, align=center, font=\scriptsize},
+    arrow/.style={-{Stealth[scale=0.9]}, thick, draw=black!70}
+]
+
+\node[stepbox, fill=purple!10] (gen) {1. Synthetic Seeding (\texttt{engine.py})};
+\node[storebox, right=0.8cm of gen] (srcdb) {Source DBs\\(Postgres/MySQL)};
+\node[stepbox, below=0.6cm of gen] (sim) {2. Activity Simulation};
+\node[stepbox, below=0.6cm of sim] (coll) {3. HTTP Ingestion (\texttt{adapters.ts})};
+\node[storebox, right=0.8cm of coll] (minio) {MinIO S3\\(\texttt{captures})};
+\node[stepbox, below=0.6cm of coll] (norm) {4. Normalization (\texttt{parsers.ts})};
+\node[storebox, right=0.8cm of norm] (wdb) {WolverineDB\\(\texttt{canonical\_records})};
+\node[stepbox, below=0.6cm of norm] (res) {5. Entity Resolution (\texttt{resolver.ts})};
+\node[stepbox, below=0.6cm of res] (graph) {6. In-Memory Graph Projector};
+\node[stepbox, below=0.6cm of graph] (rag) {7. Sanitized RAG / LLM Layer};
+\node[stepbox, fill=blue!15, below=0.6cm of rag] (ui) {8. Analyst UI Presentation};
+
+\draw[arrow] (gen) -- (srcdb);
+\draw[arrow] (gen) -- (sim);
+\draw[arrow] (sim) -- (coll);
+\draw[arrow] (coll) -- (minio);
+\draw[arrow] (coll) -- (norm);
+\draw[arrow] (norm) -- (wdb);
+\draw[arrow] (norm) -- (res);
+\draw[arrow] (res) -- (graph);
+\draw[arrow] (graph) -- (rag);
+\draw[arrow] (rag) -- (ui);
+
+\end{tikzpicture}
+\caption{End-to-End Data Processing Pipeline and Lifecycle}
+\label{fig:data-lifecycle}
+\end{figure}
+
+\section{Database Topology}
+\label{sec:data-topology}
+The platform partitions persistence across six isolated database services:
+
+\begin{enumerate}
+    \item \textbf{\texttt{postgres-sites} (PostgreSQL 16):} Shared multi-database cluster housing \texttt{atlas\_market}, \texttt{briar\_bazaar}, \texttt{drift\_forum}, and \texttt{ember\_commons}. Serves exclusively as source application storage.
+    \item \textbf{\texttt{mysql-site-c} (MySQL 8.4):} Dedicated relational database for \texttt{cinder\_exchange}.
+    \item \textbf{\texttt{redis} (Redis 7.2):} In-memory key-value store and stream broker providing session caching for Drift Forum and event queues for collection triggers.
+    \item \textbf{\texttt{minio} (MinIO Object Storage):} High-performance S3-compatible blob store. Archives unparsed HTTP response streams in the \texttt{captures} bucket, keyed by SHA-256 digest.
+    \item \textbf{\texttt{postgres-wolverine} (PostgreSQL 16):} Dedicated analytical datastore for the Wolverine pipeline, persisting canonical records, resolution candidates, and analyst case notes.
+    \item \textbf{\texttt{postgres-truth} (Truth Vault - PostgreSQL 16):} Isolated on the \texttt{wolverine-truth} internal network. Contains the ground-truth mappings between canonical synthetic personas and their multi-site handles. Accessible only by the evaluation harness.
+\end{enumerate}
+
+\section{WolverineDB: Cryptographic Trust Layer}
+\label{sec:data-wolverinedb}
+\texttt{wolverine-db} is an independent TypeScript middleware module (139 source files) designed to guarantee evidentiary immutability for forensic analytical databases.
+
+To maintain strict scientific accuracy, \Cref{tab:wdb-status} classifies the verified status of WolverineDB subsystems.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{WolverineDB Subsystem Status and Verification Classification}
+\label{tab:wdb-status}
+\begin{tabular}{@{}p{3.8cm}p{3.2cm}p{6.8cm}@{}}
+\toprule
+\textbf{Subsystem} & \textbf{Status} & \textbf{Implementation Details \& Verification Evidence} \\ \midrule
+\textbf{Cryptographic Primitives} & \textbf{Implemented} & RFC 6962 Merkle tree computation, SHA-256 state hashing, Ed25519 multi-signature validation. Verified in \texttt{src/crypto/}. \\ \addlinespace
+\textbf{CDC Trigger Schemas} & \textbf{Implemented} & Append-only trigger tables (\texttt{wolverine\_sys.change\_history}) capturing row mutations with cryptographic hash chains. \\ \addlinespace
+\textbf{Database Adapters} & \textbf{Implemented} & SQLite and PostgreSQL storage adapters for recording mutations and checkpoints. \\ \addlinespace
+\textbf{Inter-Node Transport} & \textbf{Simulated} & BFT consensus nodes communicate via in-process memory queues (\texttt{DirectMemoryNetworkTransport}) rather than network sockets. \\ \addlinespace
+\textbf{KMS / HSM Signing} & \textbf{Simulated} & Hardware Security Module key management is simulated using software key derivation functions. \\ \addlinespace
+\textbf{EVM State Anchoring} & \textbf{Simulated} & Blockchain Merkle root anchoring operates against an in-memory \texttt{Map} registry (\texttt{src/anchors/evm.ts}) without Web3 RPC calls. \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{Data Integrity and Trust Model}
+\label{sec:data-integrity}
+Evidentiary integrity relies on a three-tier cryptographic chain:
+\begin{enumerate}
+    \item \textbf{Raw Capture Hash:} $H_{\text{raw}} = \text{SHA-256}(\text{HTTP\_Payload})$.
+    \item \textbf{Canonical Record Digest:} $H_{\text{rec}} = \text{SHA-256}(\text{CanonicalJSON}(R))$.
+    \item \textbf{Merkle State Checkpoint:} Individual record digests are structured into a binary Merkle tree yielding an immutable root $R_{\text{Merkle}}$, enabling $O(\log N)$ inclusion proofs.
+\end{enumerate}
+
+\section{Database and Data Architecture Limitations}
+\label{sec:data-limitations}
+Forensic audit confirms the following architectural limitations:
+\begin{itemize}
+    \item \textbf{In-Memory Graph Projection:} Graph traversal is executed in volatile Node.js process memory (\texttt{GraphProjector}), not within database-backed PostgreSQL recursive CTEs.
+    \item \textbf{Single-Host Storage Scalability:} MinIO and PostgreSQL storage volumes are bounded by host workstation disk capacity.
+    \item \textbf{Simulated Consensus Transport:} Distributed Byzantine consensus algorithms operate within an in-process simulation harness rather than across physical network boundaries.
+\end{itemize}

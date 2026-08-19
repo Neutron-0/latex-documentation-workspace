@@ -5,12 +5,14 @@ import { BuildResult } from '../types';
 
 export class BuildManager {
   buildDir: string;
+  getWorkspaceDirFn?: () => string;
   latestSuccessfulBuild: (BuildResult & { previewPdfPath: string }) | null = null;
   lastBuild: BuildResult | null = null;
   activeBuild: { id: string; engineId: string; rootFile: string; startTime: number; status: string } | null = null;
 
-  constructor(buildDir: string) {
+  constructor(buildDir: string, getWorkspaceDirFn?: () => string) {
     this.buildDir = buildDir;
+    this.getWorkspaceDirFn = getWorkspaceDirFn;
     ensureDir(this.buildDir);
   }
 
@@ -68,6 +70,17 @@ export class BuildManager {
     const defaultPreview = path.join(this.buildDir, 'latest-preview.pdf');
     if (fs.existsSync(defaultPreview)) {
       return defaultPreview;
+    }
+    const buildMainPdf = path.join(this.buildDir, 'main.pdf');
+    if (fs.existsSync(buildMainPdf)) {
+      return buildMainPdf;
+    }
+    if (this.getWorkspaceDirFn) {
+      const wsDir = this.getWorkspaceDirFn();
+      const wsMainPdf = path.join(wsDir, 'main.pdf');
+      if (fs.existsSync(wsMainPdf)) {
+        return wsMainPdf;
+      }
     }
     return null;
   }

@@ -1,0 +1,154 @@
+\chapter{Security, Ethics, and Operational Governance}
+\label{ch:security-ethics}
+
+The deployment of automated entity resolution and artificial intelligence in intelligence analysis introduces profound security, operational, and ethical responsibilities. This chapter details the security architecture of the Wolverine platform, evaluates its cryptographic trust model, formalizes its synthetic privacy guarantees, assesses prompt-injection vulnerabilities in language model interfaces, and establishes strict ethical boundaries governing the interpretation of algorithmic outputs.
+
+\section{Security Architecture and Network Segmentation}
+\label{sec:sec-architecture}
+Security in the Wolverine platform is implemented through physical and logical network isolation across three distinct Docker bridge networks:
+
+\begin{enumerate}
+    \item \textbf{Ingress DMZ (\texttt{wolverine-dmz}):} Enforces perimeter security via the Nginx Tor gateway bridge. Implements strict rate limiting (10 requests/second per IP), restricts HTTP methods to \texttt{GET} and \texttt{HEAD}, and blocks administrative and scenario-injection paths (e.g., \texttt{/admin}, \texttt{/seed}, \texttt{/v1/scenarios}).
+    \item \textbf{Internal Mesh (\texttt{wolverine-internal}):} Segregates application microservices, databases, and analytical daemons from direct external ingress. Services communicate over internal Docker DNS without exposing database ports to the host network.
+    \item \textbf{Air-Gapped Truth Vault (\texttt{wolverine-truth}):} Configured with the Docker directive \texttt{internal: true}. This network possesses no default gateway and cannot route traffic to or from the internet or other container networks. This structural barrier mathematically guarantees that the analytical entity resolution engine cannot access ground-truth identity mappings during inference.
+\end{enumerate}
+
+\section{Trust Boundaries and Flow Control}
+\label{sec:sec-trust-boundaries}
+The platform defines three formal trust tiers, illustrated in \Cref{fig:trust-tiers}:
+\begin{itemize}
+    \item \textbf{Untrusted Tier (Public Ecosystem):} Synthetic user content, marketplace listings, and forum messages originating from Atlas, Briar, Cinder, Drift, and Ember. All data is treated as untrusted and potentially adversarial.
+    \item \textbf{Analytical Tier (Wolverine Core):} Normalized Canonical Records, in-memory graph structures, and the Express API server.
+    \item \textbf{Isolated Truth Tier (Truth Vault):} Ground-truth identity registries maintained exclusively for post-hoc benchmark evaluation.
+\end{itemize}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=1.0cm and 1.5cm,
+    tier/.style={rectangle, draw=black!70, fill=gray!5, rounded corners=4pt, minimum width=11.5cm, inner sep=8pt, align=left},
+    elem/.style={rectangle, draw=black!60, fill=white, rounded corners=2pt, minimum width=2.4cm, minimum height=0.7cm, font=\scriptsize, align=center},
+    dbelem/.style={cylinder, shape border rotate=90, draw=black!60, fill=yellow!20, aspect=0.25, minimum width=1.8cm, minimum height=0.7cm, font=\scriptsize, align=center},
+    arrow/.style={-{Stealth[scale=0.9]}, thick, draw=black!70}
+]
+
+% Tier 1
+\node[tier, fill=red!5] (tier1) {
+    \textbf{Tier 1: Untrusted Public Ecosystem (\texttt{wolverine-dmz})} \\
+    \vspace{0.2cm}
+    \begin{tikzpicture}
+        \node[elem, fill=purple!10] (t1) {Atlas (Node.js)};
+        \node[elem, fill=purple!10, right=0.3cm of t1] (t2) {Briar (Django)};
+        \node[elem, fill=purple!10, right=0.3cm of t2] (t3) {Cinder (PHP)};
+        \node[elem, fill=purple!10, right=0.3cm of t3] (t4) {Drift (Go)};
+        \node[elem, fill=purple!10, right=0.3cm of t4] (t5) {Ember (Rust)};
+    \end{tikzpicture}
+};
+
+% Tier 2
+\node[tier, fill=cyan!5, below=0.8cm of tier1] (tier2) {
+    \textbf{Tier 2: Analytical Core (\texttt{wolverine-internal})} \\
+    \vspace{0.2cm}
+    \begin{tikzpicture}
+        \node[elem, fill=cyan!15] (c1) {MinIO Capture};
+        \node[elem, fill=cyan!15, right=0.4cm of c1] (c2) {Normalizer};
+        \node[elem, fill=cyan!15, right=0.4cm of c2] (c3) {Entity Resolver};
+        \node[elem, fill=cyan!15, right=0.4cm of c3] (c4) {Graph Projector};
+        \node[elem, fill=cyan!15, right=0.4cm of c4] (c5) {RAG Assistant};
+    \end{tikzpicture}
+};
+
+% Tier 3
+\node[tier, fill=green!5, below=0.8cm of tier2] (tier3) {
+    \textbf{Tier 3: Isolated Evaluation Vault (\texttt{wolverine-truth} --- \texttt{internal: true})} \\
+    \vspace{0.2cm}
+    \begin{tikzpicture}
+        \node[dbelem, fill=green!20] (v1) {Truth Vault DB};
+        \node[elem, fill=green!15, right=1.5cm of v1] (v2) {Offline Evaluation Harness};
+    \end{tikzpicture}
+};
+
+% Flow Arrows
+\draw[arrow] (tier1.south) -- node[right, font=\scriptsize] {Rate-Limited Ingress (Tor Gateway)} (tier2.north);
+\draw[arrow, dashed, draw=red!70] (tier3.north) -- node[right, font=\scriptsize] {Post-Hoc Offline Evaluation Only (No Ingress/Egress)} (tier2.south);
+
+\end{tikzpicture}
+\caption{Wolverine Three-Tier Security Trust Architecture and Ingress Control}
+\label{fig:trust-tiers}
+\end{figure}
+
+\section{WolverineDB Security Analysis and Open Vulnerabilities}
+\label{sec:sec-wolverinedb}
+While \texttt{wolverine-db} implements robust cryptographic schemas (RFC 6962 Merkle trees, Ed25519 multi-signature validation), forensic audit identifies four open engineering vulnerabilities in the prototype implementation:
+
+\begin{enumerate}
+    \item \textbf{Non-Durable Replay Protection:} The deduplication cache is maintained in volatile memory (\texttt{Set<string>}) rather than in persistent storage, creating a potential replay window upon process restart.
+    \item \textbf{Unbound Gateway Commitments:} Gateway commitment records are not cryptographically bound to the ingested payload digest, allowing potential metadata disassociation.
+    \item \textbf{Unverified Signer Authentication:} The gateway commit handler accepts multi-signature payload headers without verifying the public key against a trusted signer registry.
+    \item \textbf{TOCTOU Window in Sentinel Policy Gate:} A time-of-check to time-of-use (TOCTOU) concurrency gap exists between state anomaly detection and automated rollback execution.
+\end{enumerate}
+
+\section{Data Safety, Privacy, and Synthetic Guarantee}
+\label{sec:sec-data-safety}
+The Wolverine platform enforces a strict \textbf{Synthetic-Only Privacy Mandate}:
+\begin{itemize}
+    \item \textbf{Exclusion of Real PII:} All demographic names, addresses, and handles are generated from pseudorandom lexical dictionaries. The generator enforces strict regex validation rejecting valid real-world payment card numbers or live Bitcoin mainnet addresses.
+    \item \textbf{Mandatory Metadata Tagging:} Every canonical record, graph edge, and AI analytical response carries an immutable field: \texttt{dataClassification: 'synthetic-research'}.
+    \item \textbf{Zero Operational Risk to Real Individuals:} Because no real-world personal data is ingested or stored, the platform operates entirely outside the regulatory scope of GDPR Article 4 or HIPAA compliance liabilities.
+\end{itemize}
+
+\section{Large Language Model Guardrails and Prompt Injection}
+\label{sec:sec-llm-security}
+Ingesting unstructured web data into an LLM context window exposes the analytical system to \textbf{Indirect Prompt Injection}~\cite{perez2022ignore}. 
+
+Wolverine addresses this threat through multi-layer defense-in-depth:
+\begin{enumerate}
+    \item \textbf{Input Sanitization:} Stripping control characters, truncating text blocks to 500 characters, and filtering adversarial override tokens (\texttt{"ignore previous instructions"}).
+    \item \textbf{Output Schema Bounding:} The model is prompted to emit strictly formatted JSON payloads complying with a defined TypeScript schema.
+    \item \textbf{Deterministic Fallback:} If the model produces unparseable JSON or times out, the system automatically falls back to deterministic heuristic extraction.
+\end{enumerate}
+It is explicitly noted that while these controls mitigate basic automated exploits, they do not constitute a formal mathematical proof of immunity against advanced semantic jailbreaks.
+
+\section{Operational Risks: False Attribution and Bias}
+\label{sec:sec-operational-risks}
+The practical application of automated entity resolution carries significant operational risks:
+\begin{itemize}
+    \item \textbf{False Positive Linkages (False Attribution):} If an analyst treats a high Jaro-Winkler score as definitive proof of identity, innocent users sharing common username roots may be falsely linked to illicit activities.
+    \item \textbf{False Negatives (Missed Threats):} Sophisticated threat actors who deliberately alter their handles across platforms bypass simple prefix and string similarity models ($s_{\text{cue}} = 0$).
+    \item \textbf{Automation Bias:} Analysts may place undue trust in AI-generated hypothesis dossiers, overlooking contradictory observational evidence.
+\end{itemize}
+
+\section{Ethical Boundaries: Correlation vs. Attribution}
+\label{sec:sec-ethical-boundaries}
+To prevent investigative misattribution, the Wolverine platform establishes a foundational operational principle:
+
+\begin{quote}
+\textbf{Foundational Principle:} \textit{Algorithmic entity resolution establishes probabilistic correlation between digital identifiers; it does NOT establish real-world identity attribution.}
+\end{quote}
+
+All analytical outputs must be governed by the following ethical protocols:
+\begin{enumerate}
+    \item \textbf{Mandatory Human-in-the-Loop:} Inferred linkages ($S \ge 0.92$) must serve solely as investigative leads. Automated decisions must never trigger judicial, operational, or punitive actions without independent human verification.
+    \item \textbf{Transparent Provenance:} Every projected edge must link directly to the raw capture hash ($H_{\text{raw}}$) in MinIO, enabling complete evidentiary reconstruction.
+    \item \textbf{Prohibition of Autonomous Profiling:} The system is strictly prohibited from executing automated blacklisting or cross-referencing against real-world law enforcement registries.
+\end{enumerate}
+
+\section{Residual Risk Analysis}
+\label{sec:sec-residual-risk}
+\Cref{tab:residual-risk-matrix} summarizes the residual security and operational risks associated with the platform.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Wolverine Platform Residual Risk and Control Matrix}
+\label{tab:residual-risk-matrix}
+\begin{tabular}{@{}p{3.5cm}p{3.8cm}p{5.5cm}@{}}
+\toprule
+\textbf{Threat Vector} & \textbf{Implemented Control} & \textbf{Residual Risk \& Operational Implication} \\ \midrule
+\textbf{Ground Truth Leakage} & Network air-gapping (\texttt{internal: true}) & Low. Enforced at Docker daemon kernel level. \\ \addlinespace
+\textbf{Indirect Prompt Injection} & 4-rule input sanitization & Medium. Semantic obfuscation may bypass static regex filters. \\ \addlinespace
+\textbf{Investigative Misattribution} & Mandatory human-in-the-loop review policy & Medium. Analysts may exhibit automation bias toward high similarity scores. \\ \addlinespace
+\textbf{Denial of Service via Flooding} & In-memory traversal bounding ($d \le 4$) & Low. Memory consumption capped; excessive graph scale degrades query latency. \\ \addlinespace
+\textbf{Ledger Replay Attack} & In-memory deduplication set & High. Process restart flushes deduplication state in current prototype. \\ \bottomrule
+\end{tabular}
+\end{table}

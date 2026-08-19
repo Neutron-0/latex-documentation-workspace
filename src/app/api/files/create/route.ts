@@ -2,27 +2,28 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { safeResolve, ensureDir } from '@/lib/utils/filesystem';
-
-const WORKSPACE_DIR = path.join(process.cwd(), 'workspace');
+import { getWorkspaceDir } from '@/lib/project';
 
 export async function POST(req: Request) {
   try {
-    const { path: relPath, type = 'file' } = await req.json();
+    const { path: relPath, type } = await req.json();
 
-    if (!relPath) {
-      return NextResponse.json({ success: false, error: 'Path is required' }, { status: 400 });
+    if (!relPath || !type) {
+      return NextResponse.json({ success: false, error: 'Path and type are required' }, { status: 400 });
     }
 
-    const targetPath = safeResolve(WORKSPACE_DIR, relPath);
+    const workspaceDir = getWorkspaceDir();
+    const targetPath = safeResolve(workspaceDir, relPath);
+
     if (fs.existsSync(targetPath)) {
-      return NextResponse.json({ success: false, error: 'File or directory already exists' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Target already exists' }, { status: 409 });
     }
 
-    if (type === 'dir' || type === 'directory') {
+    if (type === 'directory') {
       ensureDir(targetPath);
     } else {
       ensureDir(path.dirname(targetPath));
-      fs.writeFileSync(targetPath, '', 'utf8');
+      fs.writeFileSync(targetPath, '% New LaTeX file\n', 'utf8');
     }
 
     return NextResponse.json({ success: true, path: relPath, message: 'Created successfully' });

@@ -1,0 +1,79 @@
+\chapter{System Requirements and Threat Model}
+\label{ch:requirements-threat-model}
+
+To establish a rigorous engineering baseline, this chapter details the functional and non-functional requirements governing the Wolverine platform and presents a structured threat model. The threat model formally analyzes assets, threat actors, trust boundaries, attack vectors, and specific security controls, distinguishing between implemented technical mitigations and architectural constraints.
+
+\section{Functional Requirements}
+\label{sec:req-functional}
+The Wolverine platform is designed to provide an end-to-end environment for cross-platform intelligence gathering, canonical normalization, entity resolution, and safe analyst interaction.
+
+\begin{enumerate}
+    \item \textbf{Heterogeneous Source Ingestion (FR-01):} The system must ingest observable HTTP/JSON/HTML/GraphQL data from at least five architecturally distinct platforms without requiring centralized shared identity protocols.
+    \item \textbf{Canonical Schema Normalization (FR-02):} Ingested raw payloads must be parsed and mapped into strongly typed canonical records (e.g., Canonical Account, Listing, Thread, Post) with deterministic SHA-256 identification and cryptographic provenance tracking.
+    \item \textbf{Heuristic Entity Resolution (FR-03):} The system must compute probabilistic matching scores across cross-site accounts using blocking keys (prefix, temporal window) and multi-feature similarity metrics (Jaro-Winkler alias similarity, temporal proximity decay).
+    \item \textbf{Relational Graph Projection (FR-04):} Normalized entities and probabilistic linkages must be projected into an interconnected graph enabling multi-hop Breadth-First Search (BFS) queries up to a depth of four hops.
+    \item \textbf{Sanitized Analyst Synthesis (FR-05):} The analyst workstation must support question answering over canonical records via an integrated LLM with strict prompt injection sanitization and deterministic heuristic fallback.
+    \item \textbf{Isolated Ground Truth Evaluation (FR-06):} The platform must support objective verification of inferred linkages against an isolated ground-truth database without leaking ground-truth data to the inference pipeline.
+\end{enumerate}
+
+\section{Non-Functional Requirements}
+\label{sec:req-nonfunctional}
+The platform must operate within specific performance, safety, and reliability constraints appropriate for a forensic research prototype:
+
+\begin{itemize}
+    \item \textbf{Zero-Leakage Ground Truth Isolation (NFR-01):} The ground-truth database (Truth Vault) must be physically or logically partitioned such that analytical algorithms cannot query true identity links during resolution.
+    \item \textbf{Deterministic Synthetic Generation (NFR-02):} The synthetic population generator must produce reproducible multi-platform populations (up to 50,000 personas) from a single deterministic pseudorandom seed.
+    \item \textbf{Single-Host Computational Bounding (NFR-03):} The complete ecosystem (14 containerized services) must deploy and execute stably on a single host workstation within explicit memory and CPU resource allocations.
+    \item \textbf{Evidentiary Traceability (NFR-04):} Every canonical record and projected graph edge must maintain an immutable provenance chain referencing the raw capture identifier and parser version.
+    \item \textbf{Ethical Safety and PII Exclusion (NFR-05):} The generation engine must strictly enforce content filters preventing the inclusion of real cryptocurrency wallet addresses, real telephone numbers, or genuine PII.
+\end{itemize}
+
+\section{Threat Model and Trust Boundaries}
+\label{sec:req-threat-model}
+Cross-platform intelligence analysis operates in inherently adversarial data environments where ingested content cannot be trusted.
+
+\subsection{Assets and Trust Boundaries}
+The primary assets protected by the system architecture include:
+\begin{itemize}
+    \item \textbf{Asset 1 (Ground Truth Registry):} The mapping of synthetic personas to cross-site accounts residing in the Truth Vault.
+    \item \textbf{Asset 2 (Canonical Evidence Store):} Normalized records and relational graphs residing in WolverineDB.
+    \item \textbf{Asset 3 (Analyst Query Engine):} LLM context windows and analytical reasoning pipelines.
+\end{itemize}
+
+As illustrated in the system architecture, the system defines three distinct trust boundaries:
+\begin{enumerate}
+    \item \textbf{Public Ecosystem Boundary:} Separates untrusted synthetic web applications and the Tor gateway from the Wolverine collection layer.
+    \item \textbf{Truth Vault Boundary:} Enforces an air-gapped, isolated internal network (`wolverine-truth`) containing the ground-truth PostgreSQL instance with zero external egress.
+    \item \textbf{Analyst Interface Boundary:} Restricts analyst interactions to authenticated, read-only analytical queries over the local REST API.
+\end{enumerate}
+
+\subsection{Threat Classification and Mitigation Matrix}
+\Cref{tab:threat-matrix} classifies potential security threats against the platform, their attack surfaces, the implemented mitigations, and residual risks.
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{System Threat Matrix and Security Controls}
+\label{tab:threat-matrix}
+\begin{tabular}{@{}p{3.2cm}p{3cm}p{4.2cm}p{3.8cm}@{}}
+\toprule
+\textbf{Threat \& Vector} & \textbf{Attack Surface} & \textbf{Mitigation Strategy} & \textbf{Status \& Residual Risk} \\ \midrule
+\textbf{T-01: Indirect Prompt Injection} \newline Malicious instruction in forum post & LLM RAG Context Ingestion & 4-Rule Input Sanitization: control-char stripping, 500-char truncation, marker filtering (\texttt{[INST]}, \texttt{system:}) & \textbf{Implemented} \newline Advanced semantic obfuscation may bypass static regexes. \\ \addlinespace
+\textbf{T-02: Ground Truth Leakage} \newline Entity resolver cheating during evaluation & Truth Vault Database & Strict network isolation (\texttt{internal: true} Docker bridge); separate admin credentials & \textbf{Architectural} \newline Resolver process shares host OS; enforced by network config. \\ \addlinespace
+\textbf{T-03: Gateway Path Traversal} \newline Unauthorized access to admin endpoints & Tor Gateway Ingress & Reverse proxy allowlisting (GET/HEAD only); rate limiting (10 req/s); blocking \texttt{/admin}, \texttt{/seed} & \textbf{Implemented} \newline Configuration-level guarantee in Nginx. \\ \addlinespace
+\textbf{T-04: Sybil Denial of Service} \newline Flooding ecosystem with fake accounts & Normalizer and Graph Projector & Single-host resource limits (cgroup memory caps); in-memory BFS depth bounding ($\le 4$) & \textbf{Implemented} \newline Excessive graph edges degrade BFS performance. \\ \addlinespace
+\textbf{T-05: Evidentiary Tampering} \newline Modifying historical canonical records & WolverineDB analytical database & Cryptographic hash chains (SHA-256) and Merkle state checkpoint verification & \textbf{Partially Implemented} \newline Merkle logic verified; durable ledger storage uses SQLite/PostgreSQL. \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{Ethical Boundaries and Research Scope}
+\label{sec:req-ethics}
+A critical requirement of the Wolverine research architecture is strict adherence to ethical research standards. Ingesting and analyzing data from dark web or underground marketplaces in real-world investigations raises significant civil liberty, privacy, and evidentiary challenges. 
+
+Wolverine addresses this by enforcing a \textbf{Synthetic-Only Research Mandate}:
+\begin{itemize}
+    \item All usernames, listings, messages, and transactional interactions are generated by the deterministic synthetic engine.
+    \item Financial identifiers use explicitly invalid synthetic patterns (e.g., testnet address structures, zero-value balances).
+    \item All normalized records and AI-generated outputs carry an immutable metadata tag: \texttt{dataClassification: 'synthetic-research'}.
+\end{itemize}
+This guarantee eliminates privacy risks to real-world individuals while enabling rigorous mathematical evaluation of entity resolution algorithms.

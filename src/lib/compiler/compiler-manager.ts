@@ -5,6 +5,7 @@ import { BuildManager } from './build-manager';
 import { LatexErrorParser } from './error-parser';
 import { BuildResult, EngineInfo } from '../types';
 import { ProcessControl } from '../utils/process';
+import { getWorkspaceDir, getProjectConfig } from '../project';
 
 export class CompilerManager {
   projectRoot: string;
@@ -17,10 +18,10 @@ export class CompilerManager {
   constructor(projectRoot: string = process.cwd()) {
     this.projectRoot = projectRoot;
     this.buildDir = path.join(projectRoot, '.build');
-    this.workspaceDir = path.join(projectRoot, 'workspace');
+    this.workspaceDir = getWorkspaceDir(projectRoot);
 
     this.detector = new EngineDetector();
-    this.buildManager = new BuildManager(this.buildDir);
+    this.buildManager = new BuildManager(this.buildDir, () => this.workspaceDir);
   }
 
   async getEngines(preferredId?: string | null): Promise<{
@@ -41,7 +42,12 @@ export class CompilerManager {
   }
 
   async compile(options: { rootFile?: string; engineId?: string | null }): Promise<BuildResult> {
-    const { rootFile = 'main.tex', engineId = null } = options;
+    const projectConfig = getProjectConfig(this.projectRoot);
+    const rootFile = options.rootFile || projectConfig.rootFile || 'main.tex';
+    const engineId = options.engineId || projectConfig.compiler || null;
+
+    // Refresh active workspace directory
+    this.workspaceDir = getWorkspaceDir(this.projectRoot);
 
     this.cancelCurrentBuild();
 

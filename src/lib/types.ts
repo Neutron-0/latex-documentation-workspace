@@ -1,5 +1,6 @@
 export interface ProjectConfig {
   name: string;
+  projectDir?: string;
   rootFile: string;
   compiler: string;
   autoBuild: boolean;

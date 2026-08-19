@@ -13,7 +13,8 @@ export class LatexErrorParser {
     const lineLocatorRegex = /^l\.(\d+)\s*(.*)$/;
     const warningRegex = /^(?:LaTeX Warning|Package \w+ Warning):\s*(.*)$/i;
     const warningLineRegex = /on input line (\d+)/i;
-    const tectonicErrorRegex = /^error:\s*(.*)$/i;
+    const tectonicPrefixErrorRegex = /^(?:error|warning):\s*(.+?\.(?:tex|sty|cls|bib)):(\d+):\s*(.*)$/i;
+    const tectonicGenericErrorRegex = /^error:\s*(.*)$/i;
     const tectonicLocRegex = /at (?:line )?(\d+)(?: of (.+?\.(?:tex|sty|cls)))?/i;
 
     for (let i = 0; i < lines.length; i++) {
@@ -23,6 +24,34 @@ export class LatexErrorParser {
       const fileEnterMatch = line.match(/\(([\.\/\\a-zA-Z0-9_\-]+\.tex)\b/);
       if (fileEnterMatch) {
         currentFile = fileEnterMatch[1].replace(/^\.\//, '');
+      }
+
+      // Check Tectonic file:line syntax first: "error: chapters/01-introduction.tex:23: message"
+      const tecLineMatch = line.match(tectonicPrefixErrorRegex);
+      if (tecLineMatch) {
+        const isWarn = line.toLowerCase().startsWith('warning:');
+        const file = tecLineMatch[1].trim();
+        const lineNum = parseInt(tecLineMatch[2], 10);
+        const message = tecLineMatch[3].trim() || (isWarn ? 'Warning' : 'LaTeX syntax error');
+
+        if (isWarn) {
+          warnings.push({
+            type: 'warning',
+            file,
+            line: lineNum,
+            message,
+            raw: line,
+          });
+        } else {
+          errors.push({
+            type: 'error',
+            file,
+            line: lineNum,
+            message,
+            raw: line,
+          });
+        }
+        continue;
       }
 
       const fleMatch = line.match(fileLineErrorRegex);
@@ -67,7 +96,7 @@ export class LatexErrorParser {
         continue;
       }
 
-      const tectonicMatch = line.match(tectonicErrorRegex);
+      const tectonicMatch = line.match(tectonicGenericErrorRegex);
       if (tectonicMatch) {
         const message = tectonicMatch[1].trim();
         let errorLine: number | null = null;
