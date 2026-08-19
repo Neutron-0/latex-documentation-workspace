@@ -1,0 +1,25 @@
+{
+  "name": "latex-documentation-workspace",
+  "version": "1.0.0",
+  "description": "Clean, modular local LaTeX authoring environment with multi-file project support, compilation, PDF preview, PDF export, and diagnostics.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "setup": "node server/utils/setup-tectonic.js",
+    "test": "node server/tests/run-tests.js"
+  },
+  "keywords": [
+    "latex",
+    "editor",
+    "preview",
+    "pdf",
+    "tectonic",
+    "pdflatex"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

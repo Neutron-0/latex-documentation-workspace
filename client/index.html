@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LaTeX Documentation Workspace</title>
+  
+  <!-- CodeMirror for LaTeX editing -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/nord.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.css">
+  
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top Toolbar -->
+    <header class="toolbar">
+      <div class="toolbar-section left">
+        <div class="brand">
+          <span class="brand-icon">⚡</span>
+          <span class="brand-title">LaTeX Workspace</span>
+        </div>
+        
+        <div class="root-badge" id="root-badge" title="Root document compiled by the engine">
+          <span class="badge-label">Root:</span>
+          <span class="badge-value" id="root-file-name">main.tex</span>
+        </div>
+      </div>
+
+      <div class="toolbar-section center">
+        <!-- Engine selector -->
+        <div class="engine-selector-container">
+          <label for="engine-select">Engine:</label>
+          <select id="engine-select" class="dropdown" title="Select LaTeX compiler engine">
+            <option value="tectonic">Tectonic (Auto)</option>
+            <option value="pdflatex">pdfLaTeX</option>
+            <option value="xelatex">XeLaTeX</option>
+            <option value="lualatex">LuaLaTeX</option>
+          </select>
+        </div>
+
+        <!-- Build action -->
+        <button id="btn-compile" class="btn btn-primary" title="Compile LaTeX document (Ctrl+B)">
+          <span class="btn-icon" id="compile-icon">▶</span>
+          <span id="compile-text">Compile</span>
+        </button>
+
+        <button id="btn-cancel" class="btn btn-danger hidden" title="Cancel active compilation">
+          <span class="btn-icon">⏹</span>
+          <span>Cancel</span>
+        </button>
+
+        <!-- Auto compile toggle -->
+        <label class="toggle-container" title="Automatically compile when saving (Ctrl+S)">
+          <input type="checkbox" id="auto-build-toggle">
+          <span class="toggle-label">Auto-build</span>
+        </label>
+      </div>
+
+      <div class="toolbar-section right">
+        <!-- Build Status indicator -->
+        <div id="build-status-badge" class="status-badge ready">
+          <span class="status-dot"></span>
+          <span id="status-text">Ready</span>
+        </div>
+
+        <!-- Export PDF button -->
+        <button id="btn-export-pdf" class="btn btn-secondary" title="Download compiled PDF">
+          <span class="btn-icon">📥</span>
+          <span>Export PDF</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main 3-Column Workspace -->
+    <main class="workspace-container">
+      <!-- Left Panel: File Explorer -->
+      <aside class="sidebar-panel" id="file-explorer-panel">
+        <div class="panel-header">
+          <span class="panel-title">FILES</span>
+          <div class="panel-actions">
+            <button id="btn-new-file" class="icon-btn" title="New File">📄+</button>
+            <button id="btn-new-folder" class="icon-btn" title="New Folder">📁+</button>
+            <button id="btn-refresh-files" class="icon-btn" title="Refresh File Tree">🔄</button>
+          </div>
+        </div>
+        
+        <div class="file-tree-container" id="file-tree">
+          <!-- Populated dynamically -->
+        </div>
+      </aside>
+
+      <!-- Center Panel: LaTeX Code Editor -->
+      <section class="editor-panel">
+        <div class="panel-header editor-header">
+          <div class="active-file-info">
+            <span class="file-icon">📄</span>
+            <span id="active-file-path">main.tex</span>
+            <span id="unsaved-indicator" class="unsaved-dot hidden" title="Unsaved changes">●</span>
+          </div>
+          <div class="editor-actions">
+            <button id="btn-save-file" class="btn btn-sm btn-ghost" title="Save file (Ctrl+S)">💾 Save</button>
+          </div>
+        </div>
+
+        <div class="editor-wrapper" id="editor-container">
+          <textarea id="latex-code-input" placeholder="Open or select a file to start editing..."></textarea>
+        </div>
+      </section>
+
+      <!-- Right Panel: Document / PDF Preview -->
+      <section class="preview-panel">
+        <div class="panel-header preview-header">
+          <span class="panel-title">PDF PREVIEW</span>
+          <div class="preview-controls">
+            <button id="btn-refresh-preview" class="icon-btn" title="Refresh Preview">🔄</button>
+            <button id="btn-open-tab" class="icon-btn" title="Open PDF in new browser tab">↗️</button>
+          </div>
+        </div>
+
+        <div class="preview-viewport" id="preview-viewport">
+          <div id="preview-placeholder" class="placeholder-message">
+            <div class="placeholder-icon">📑</div>
+            <div class="placeholder-title">No PDF compiled yet</div>
+            <div class="placeholder-sub">Click <strong>Compile</strong> (or press <strong>Ctrl+B</strong>) to build the document.</div>
+          </div>
+          
+          <iframe id="pdf-viewer-frame" class="pdf-frame hidden" src="about:blank"></iframe>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Diagnostics & Build Logs Panel -->
+    <footer class="diagnostics-panel" id="diagnostics-panel">
+      <div class="diagnostics-header">
+        <div class="diagnostics-tabs">
+          <button class="tab-btn active" data-tab="problems" id="tab-problems-btn">
+            Problems <span class="badge" id="problems-count">0</span>
+          </button>
+          <button class="tab-btn" data-tab="logs" id="tab-logs-btn">
+            Build Output
+          </button>
+        </div>
+
+        <div class="diagnostics-meta">
+          <span id="last-build-meta"></span>
+          <button id="btn-toggle-diagnostics" class="icon-btn" title="Collapse / Expand Panel">▾</button>
+        </div>
+      </div>
+
+      <div class="diagnostics-content">
+        <!-- Tab 1: Problems / Errors list -->
+        <div class="tab-pane active" id="pane-problems">
+          <div class="problems-list" id="problems-list">
+            <div class="empty-state">No issues found. Build is clean.</div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Raw build logs -->
+        <div class="tab-pane" id="pane-logs">
+          <div class="log-controls">
+            <button id="btn-clear-logs" class="btn btn-sm btn-ghost">Clear</button>
+            <button id="btn-copy-logs" class="btn btn-sm btn-ghost">Copy All</button>
+          </div>
+          <pre class="raw-log-viewer" id="raw-log-output">Ready to compile.</pre>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- CodeMirror core & addons -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/stex/stex.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.js"></script>
+
+  <!-- Client Application Scripts -->
+  <script src="js/project.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/filetree.js"></script>
+  <script src="js/preview.js"></script>
+  <script src="js/console.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

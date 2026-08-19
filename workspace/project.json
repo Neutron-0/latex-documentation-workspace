@@ -1,0 +1,8 @@
+{
+  "name": "Technical Documentation",
+  "rootFile": "main.tex",
+  "compiler": "tectonic",
+  "autoBuild": false,
+  "synctex": true,
+  "buildDir": ".build"
+}

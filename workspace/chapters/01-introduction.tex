@@ -1,0 +1,26 @@
+\section{Introduction}
+\label{sec:intro}
+
+Welcome to the \textbf{LaTeX Documentation Workspace}. This environment is designed for authoring high-precision technical documents, research specifications, and reports.
+
+\subsection{Key Architecture Capabilities}
+The system provides a decoupled pipeline between source editing, workspace management, and LaTeX compiler execution:
+\begin{itemize}
+    \item \textbf{Isolated Builds}: All compilation artifacts ($\text{.aux}$, $\text{.log}$, etc.) reside exclusively in \texttt{.build/}.
+    \item \textbf{Modular Source}: Documents are split across multiple files and chapters using \texttt{\textbackslash input} or \texttt{\textbackslash include}.
+    \item \textbf{Multi-Engine Support}: Automatic engine detection for Tectonic, pdfLaTeX, XeLaTeX, and LuaLaTeX.
+    \item \textbf{Structured Diagnostics}: Log parsing provides direct line references for syntax errors and warnings.
+\end{itemize}
+
+\subsection{Mathematical Typesetting}
+Standard mathematical equations can be rendered seamlessly:
+\begin{equation}
+    \mathcal{F}(\omega) = \int_{-\infty}^{\infty} f(t) e^{-i\omega t} \, dt
+\end{equation}
+And discrete formulations such as:
+\begin{equation}
+    \sum_{k=1}^{n} k^2 = \frac{n(n+1)(2n+1)}{6}
+\end{equation}
+
+\subsection{Citations and References}
+Cross-referencing sections like Section~\ref{sec:intro} and bibliographic references such as Knuth's foundational work on \TeX~\cite{knuth1984texbook} and Lamport's \LaTeX~\cite{lamport1994latex} are fully supported.

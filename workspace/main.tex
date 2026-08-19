@@ -1,0 +1,41 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{cite}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    citecolor=blue
+}
+
+\title{\textbf{LaTeX Documentation Workspace}\\ \large Modular Technical Authoring Environment}
+\author{Documentation Author}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This document demonstrates the modular multi-file LaTeX workspace. It verifies source document compilation, chapter inclusion, mathematical typesetting, and citation linking within the local authoring environment.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% Modular Chapter Inclusion
+\input{chapters/01-introduction.tex}
+
+\newpage
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}
