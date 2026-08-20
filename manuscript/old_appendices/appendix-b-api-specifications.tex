@@ -1,0 +1,165 @@
+\chapter{API Specifications and Protocol Interfaces}
+\label{app:api-specifications}
+
+This appendix catalogs the programmatic interfaces of the Wolverine backend within the \texttt{wolverine-internal} trust zone. All endpoints are implemented in \texttt{wolverine/src/api/server.ts} and guarded by the RBAC middleware documented in \Cref{ch:implementation}.
+
+\section{Role-Based Access Control}
+\label{app-sec:rbac}
+
+The API implements role-based access control via the \texttt{X-Wolverine-Role} HTTP header. This is a functional routing mechanism operating within the isolated internal network; it does \textit{not} constitute cryptographic authentication.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{p{0.18\textwidth} p{0.72\textwidth}}
+\toprule
+\textbf{Role} & \textbf{Permissions} \\
+\midrule
+\texttt{admin} & Full access to all endpoints including seed, metrics, and administrative operations. \\
+\texttt{operator} & Read/write access to collection runs, records, resolution candidates, and analysis. \\
+\texttt{researcher} & Read-only access to records, graph queries, and analysis questions. \\
+\texttt{reviewer} & Read access to resolution candidates; write access to approve/reject decisions. \\
+\texttt{public\_demo} & Read-only access to a restricted subset of endpoints (graph, records). \\
+\bottomrule
+\end{tabular}
+\caption{RBAC Role Definitions and Permission Scopes}
+\label{tab:app-rbac-roles}
+\end{table}
+
+\textbf{Implementation:} The \texttt{getRole()} middleware extracts the role from the \texttt{X-Wolverine-Role} header via strict string equality. The \texttt{requireRole()} middleware enforces that the extracted role matches one of the permitted roles for the endpoint, returning HTTP 403 otherwise.
+
+\section{Endpoint Catalog}
+\label{app-sec:endpoint-catalog}
+
+\begin{table}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{p{0.08\textwidth} p{0.30\textwidth} p{0.35\textwidth} p{0.22\textwidth}}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Purpose} & \textbf{Source Module} \\
+\midrule
+\texttt{GET} & \texttt{/health/live} & Liveness probe (always 200). & \texttt{server.ts} \\
+\texttt{GET} & \texttt{/health/ready} & Readiness probe (checks DB connectivity). & \texttt{server.ts} \\
+\texttt{GET} & \texttt{/metrics} & Prometheus-compatible metrics export. & \texttt{server.ts} \\
+\midrule
+\texttt{POST} & \texttt{/v1/collection-runs} & Initiate a new data collection run against a source site. & \texttt{server.ts} \\
+\texttt{GET} & \texttt{/v1/collection-runs/:id} & Retrieve the status and metadata of a specific collection run. & \texttt{server.ts} \\
+\midrule
+\texttt{GET} & \texttt{/v1/records} & List canonical (normalized) records with filtering and pagination. & \texttt{server.ts} \\
+\texttt{GET} & \texttt{/v1/records/:id} & Retrieve a single canonical record by UUID. & \texttt{server.ts} \\
+\midrule
+\texttt{GET} & \texttt{/v1/graph/query} & Execute bounded BFS traversal on the entity graph. & \texttt{projector.ts} \\
+\midrule
+\texttt{POST} & \texttt{/v1/analysis/questions} & Submit a question to the RAG pipeline for AI-assisted analysis. & \texttt{rag.ts} \\
+\midrule
+\texttt{GET} & \texttt{/v1/resolution-candidates} & List entity resolution candidates with state filtering. & \texttt{server.ts} \\
+\texttt{PATCH} & \texttt{/v1/resolution-candidates/:id} & Update candidate state (approve/reject for HITL review). & \texttt{server.ts} \\
+\bottomrule
+\end{tabular}
+}
+\caption{Verified API Endpoint Catalog (from \texttt{wolverine/src/api/server.ts})}
+\label{tab:app-endpoints}
+\end{table}
+
+\section{Graph Query Interface}
+\label{app-sec:api-graph}
+
+The \texttt{/v1/graph/query} endpoint interfaces with the in-memory BFS engine implemented in \texttt{wolverine/src/graph/projector.ts} (\Cref{ch:analytical-methodology}).
+
+\begin{itemize}
+    \item \textbf{Query Parameters:}
+    \begin{itemize}
+        \item \texttt{startRef} (required): The UUID of the root node for BFS traversal.
+        \item \texttt{maxDepth} (optional, default: 2, max: 4): Maximum traversal depth.
+        \item \texttt{limit} (optional, default: 100, max: 500): Maximum nodes returned.
+    \end{itemize}
+    \item \textbf{Response Format:}
+    \begin{verbatim}
+    {
+      "nodes": [{ "id": "uuid", "label": "AtlasAccount", ... }],
+      "edges": [{ "source": "uuid-a", "target": "uuid-b",
+                  "type": "linked", "weight": 0.94 }],
+      "truncated": false
+    }
+    \end{verbatim}
+    \item \textbf{Truncation:} If the BFS exceeds the \texttt{limit} parameter, the response includes \texttt{"truncated": true} to signal partial results.
+\end{itemize}
+
+\section{RAG Interface}
+\label{app-sec:api-rag}
+
+The \texttt{/v1/analysis/questions} endpoint manages the integration with the local Ollama container (\Cref{ch:analytical-methodology}).
+
+\textit{Illustrative API request (synthetic example --- not empirical):}
+\begin{verbatim}
+POST /v1/analysis/questions
+Content-Type: application/json
+X-Wolverine-Role: researcher
+
+{
+  "question": "Summarize the temporal activity overlap
+               between atlas:shadow_broker and briar:shad0w.",
+  "contextNodeIds": ["uuid-1", "uuid-2"]
+}
+\end{verbatim}
+
+\textbf{Execution Flow:}
+\begin{enumerate}
+    \item \textbf{Sanitization:} Applies the 4-rule regex sequence (\Cref{ch:analytical-methodology}): strip control characters, truncate to 500 characters, mask injection patterns, cap context to 20 records.
+    \item \textbf{Prompt Construction:} Constructs a structured prompt forcing the LLM to label outputs as ``analytic hypothesis'' with explicit JSON citations.
+    \item \textbf{Invocation:} Issues a POST to \texttt{http://ollama:11434/api/generate} with a 5,000ms \texttt{AbortSignal} timeout.
+    \item \textbf{Fallback:} If Ollama exceeds the timeout, the system returns a deterministic string summarizing the retrieved context and citing the top 3 records.
+\end{enumerate}
+
+\textbf{Expected Response Format:}
+\begin{verbatim}
+{
+  "answer": "Analytic hypothesis: ...",
+  "confidence": 0.72,
+  "citations": [
+    { "recordId": "uuid-1", "source": "atlas" },
+    { "recordId": "uuid-2", "source": "briar" }
+  ]
+}
+\end{verbatim}
+
+\section{Collection Run Interface}
+\label{app-sec:api-collection}
+
+The \texttt{/v1/collection-runs} endpoints manage the data ingestion lifecycle.
+
+\textbf{Create Collection Run:}
+\begin{verbatim}
+POST /v1/collection-runs
+Content-Type: application/json
+X-Wolverine-Role: operator
+
+{
+  "sourceId": 1,
+  "mode": "full"
+}
+\end{verbatim}
+
+\textbf{Response:} Returns the collection run ID and initial status. The system asynchronously fetches data from the specified source site, stores raw payloads in MinIO, and routes parsed records through the normalization pipeline.
+
+\section{Error Catalog}
+\label{app-sec:api-errors}
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{p{0.15\textwidth} p{0.08\textwidth} p{0.67\textwidth}}
+\toprule
+\textbf{Error Code} & \textbf{HTTP} & \textbf{Trigger Condition} \\
+\midrule
+\texttt{ERR\_AUTH} & 403 & Missing or invalid \texttt{X-Wolverine-Role} header. \\
+\texttt{ERR\_NOT\_FOUND} & 404 & Requested resource (record, collection run, candidate) does not exist. \\
+\texttt{ERR\_VALIDATION} & 400 & Request body fails JSON schema validation. \\
+\texttt{ERR\_PARSE} & 400 & Ingested payload fails site-specific parser; record quarantined. \\
+\texttt{ERR\_GRAPH\_TRUNC} & 200 & BFS hits the node limit; partial graph returned with \texttt{truncated: true}. \\
+\texttt{ERR\_LLM\_TIMEOUT} & 200 & Ollama timeout ($>$5s); deterministic fallback string returned. \\
+\texttt{ERR\_LLM\_UNAVAIL} & 503 & Ollama container unreachable; service degradation mode. \\
+\texttt{ERR\_DB} & 500 & PostgreSQL or Redis connection failure; circuit breaker triggered. \\
+\bottomrule
+\end{tabular}
+\caption{API Error Catalog with HTTP Status Codes}
+\label{tab:app-api-errors}
+\end{table}

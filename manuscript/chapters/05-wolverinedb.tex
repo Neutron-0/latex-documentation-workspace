@@ -1,0 +1,60 @@
+\chapter{WolverineDB Cryptographic Middleware}
+\label{ch:wolverinedb}
+
+\section{Problem Definition and Threat Model}
+\label{sec:wdb_problem}
+
+Conventional database architectures delegate audit logging to internal transaction logs (Write-Ahead Logging / CDC) co-located on the same host infrastructure \cite{kleppmann2017designing}. Under an insider threat or root-level host compromise, an adversary possessing superuser database privileges can silently mutate historical records, retroactively alter timestamps, and rewrite database audit tables without leaving cryptographic evidence \cite{shostack2014threat}. 
+
+The core objective of WolverineDB (v1.3.0) is establishing an independent, tamper-evident cryptographic middleware layer that guarantees two fundamental invariants: (1) \textit{Database compromise must not destroy historical trust evidence}; and (2) \textit{Infrastructure compromise must not allow silent retroactive forgery of previously certified state transitions}.
+
+\section{Cryptographic Ledger Primitives}
+\label{sec:crypto_primitives}
+
+WolverineDB implements a three-tier cryptographic integrity pipeline:
+
+\subsection{Canonical Serialization and Tagged Tuples}
+To eliminate delimiter-injection attacks and serialization ambiguities across varied language runtimes, all mutation pre-images are normalized via the RFC~8785 JSON Canonicalization Scheme (JCS) \cite{rfc8785} and encoded into type-tagged, length-prefixed binary tuples.
+
+\subsection{Linear Hash Chain Construction}
+State mutations are sequenced into a continuous SHA-256 linear hash chain. For block index $i$, the change hash is computed with explicit domain separation prefixes:
+\begin{equation}
+\label{eq:hash_chain}
+H_i = \text{SHA-256}\big(H_{i-1} \mathbin{\Vert} \text{len}(m_i) \mathbin{\Vert} m_i \mathbin{\Vert} t_i\big)
+\end{equation}
+
+\subsection{RFC~6962 Merkle Tree Roots}
+To provide logarithmic-time ($O(\log N)$) proofs of state inclusion and consistency without revealing the full transaction history, mutations are structured into append-only Merkle trees compliant with RFC~6962 \cite{rfc6962, merkle1987digital}. Leaf hashes are computed with byte prefix \texttt{0x00} and interior node hashes with byte prefix \texttt{0x01}:
+\begin{equation}
+\label{eq:merkle_prefixes}
+H_{\text{leaf}} = \text{SHA-256}(0\text{x}00 \mathbin{\Vert} M), \quad H_{\text{interior}} = \text{SHA-256}(0\text{x}01 \mathbin{\Vert} L \mathbin{\Vert} R)
+\end{equation}
+
+\section{Distributed Consensus and Byzantine Fault Tolerance}
+\label{sec:consensus_model}
+
+To prevent a single compromised database replica from issuing fraudulent state certificates, WolverineDB implements a 4-of-5 Byzantine Fault Tolerant (BFT) consensus protocol \cite{castro1999practical, lamport1982byzantine}:
+
+\begin{itemize}
+    \item \textbf{Validator Quorum Threshold:} Across a pool of $N = 5$ independent validators, the system enforces a quorum requirement of $M = 4$ ($3f + 1$ model with $f=1$), requiring strictly $\ge 4$ independent Ed25519 cryptographic signatures \cite{rfc8032}.
+    \item \textbf{Quorum Certificate (QC):} When four valid attestations are aggregated for block $H_i$, the consensus engine generates a cryptographic \texttt{QuorumCertificate} appended to the persistent ledger.
+    \item \textbf{Simulated In-Process Network Transport:} In the current prototype, validator nodes communicate via \texttt{DirectMemoryNetworkTransport} (\texttt{src/runtime/network\_transport.ts}), executing the consensus state machine synchronously in memory rather than over a wide-area network.
+    \item \textbf{Simulated External Anchoring:} External blockchain notarization is modeled via \texttt{EvmAnchorClient} (\texttt{src/anchors/evm.ts}) using an in-memory \texttt{Map} to simulate Ethereum smart contract state.
+\end{itemize}
+
+\section{Sentinel Anomaly Detection and Crash-Safe Recovery}
+\label{sec:sentinel_recovery}
+
+WolverineDB incorporates the \texttt{Sentinel} anomaly engine (\texttt{src/sentinel/anomaly\_engine.ts}) to detect suspicious mutation bursts. Transaction anomaly scores are calculated over a sliding window with linear 30-day temporal decay. Scores $S \ge 0.92$ trigger defensive policy gating (\texttt{policy\_gate.ts}), isolating the compromised CDC stream.
+
+For catastrophic crash recovery, the \texttt{CrashSafeJournal} implements write-ahead logging with atomic file descriptors (\texttt{O\_CREAT | O\_EXCL} / \texttt{'wx'} flag in Node.js), preventing time-of-check to time-of-use (TOCTOU) file race conditions during crash reconstruction.
+
+\section{Evidentiary Qualification and Simulation Demarcation}
+\label{sec:wdb_limitations}
+
+The cryptographic algorithms (SHA-256, Ed25519, Merkle proofs) and BFT state transitions are mathematically genuine and covered by 219 automated test suites. However, the operational deployment remains a simulation: (1) network transport uses in-memory message queues; (2) key storage uses local deterministic keys rather than physical Hardware Security Modules (HSMs); and (3) EVM anchoring executes without actual Ethereum gas settlement.
+
+\section{Research Significance}
+\label{sec:wdb_significance}
+
+WolverineDB demonstrates a specification-driven methodology (governed by 91 normative WDB specifications) for decoupling relational database state from evidentiary trust, enabling independent verification of multi-source intelligence pipelines.

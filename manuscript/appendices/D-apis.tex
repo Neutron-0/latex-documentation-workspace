@@ -1,0 +1,54 @@
+\chapter{API Architecture}
+\label{app:api}
+
+The \texttt{wolverine-api} serves as the primary gateway to the Wolverine analytic pipeline, graph projection, and entity resolution systems. Implemented in Express (Node.js), it enforces strict role-based access control (RBAC) via the \texttt{X-Wolverine-Role} HTTP header. 
+
+Table \ref{tab:express_routes} comprehensively documents the exact Express routes implemented in \texttt{server.ts}, denoting the HTTP method, endpoint path, and authorized roles.
+
+\begin{table}[h!]
+    \centering
+    \footnotesize
+    \begin{tabular}{llp{6cm}}
+    \toprule
+    \textbf{Method} & \textbf{Path} & \textbf{Authorized Roles} \\
+    \midrule
+    \multicolumn{3}{c}{\textit{System \& Health}} \\
+    \midrule
+    \texttt{GET} & \texttt{/health/live} & Public \\
+    \texttt{GET} & \texttt{/health/ready} & \texttt{operator}, \texttt{admin} \\
+    \texttt{GET} & \texttt{/metrics} & \texttt{operator}, \texttt{admin} \\
+    \midrule
+    \multicolumn{3}{c}{\textit{Collection Runs}} \\
+    \midrule
+    \texttt{POST} & \texttt{/v1/collection-runs} & \texttt{operator}, \texttt{admin} \\
+    \texttt{GET} & \texttt{/v1/collection-runs/:id} & \texttt{operator}, \texttt{admin} \\
+    \midrule
+    \multicolumn{3}{c}{\textit{Record Explorer}} \\
+    \midrule
+    \texttt{GET} & \texttt{/v1/records} & \texttt{researcher}, \texttt{operator}, \texttt{admin} \\
+    \texttt{GET} & \texttt{/v1/records/:id} & \texttt{researcher}, \texttt{operator}, \texttt{admin} \\
+    \midrule
+    \multicolumn{3}{c}{\textit{Graph Query \& AI Analysis}} \\
+    \midrule
+    \texttt{GET} & \texttt{/v1/graph/query} & \texttt{researcher}, \texttt{operator}, \texttt{admin} \\
+    \texttt{POST} & \texttt{/v1/analysis/questions} & \texttt{researcher}, \texttt{operator}, \texttt{admin} \\
+    \midrule
+    \multicolumn{3}{c}{\textit{Scenarios}} \\
+    \midrule
+    \texttt{GET} & \texttt{/v1/scenarios} & \texttt{researcher}, \texttt{operator}, \texttt{admin} \\
+    \texttt{POST} & \texttt{/v1/scenarios/:id/run} & \texttt{operator}, \texttt{admin} \\
+    \texttt{GET} & \texttt{/v1/scenarios/:id/results/:runId} & \texttt{researcher}, \texttt{operator}, \texttt{admin} \\
+    \midrule
+    \multicolumn{3}{c}{\textit{Entity Resolution Review}} \\
+    \midrule
+    \texttt{GET} & \texttt{/v1/resolution-candidates} & \texttt{reviewer}, \texttt{operator}, \texttt{admin} \\
+    \texttt{PATCH} & \texttt{/v1/resolution-candidates/:id} & \texttt{reviewer}, \texttt{operator}, \texttt{admin} \\
+    \bottomrule
+    \end{tabular}
+    \vspace{0.5cm}
+    \caption{Exact Express Routes in \texttt{wolverine-api} (\texttt{server.ts})}
+    \label{tab:express_routes}
+\end{table}
+
+\section{Security and Implementation Notes}
+Authorization checks are handled by the \texttt{requireRole} middleware. If a request lacks a recognized role, it falls back to the \texttt{public\_demo} role, issuing a 401 Unauthorized for protected endpoints. Explicitly forbidden access returns a 403 Forbidden with standard Wolverine error envelopes. The graph projection endpoints enforce traversing the in-memory projected graphs strictly via bounded BFS; we purposefully avoid offloading arbitrary paths to PostgreSQL recursive CTEs.

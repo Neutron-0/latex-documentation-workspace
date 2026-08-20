@@ -1,0 +1,51 @@
+\chapter{Data Architecture}
+\label{ch:data_architecture}
+
+\section{Problem Definition and Polyglot Ingestion}
+\label{sec:data_problem}
+
+Cyber threat intelligence pipelines must capture unstructured and semi-structured communications across adversarial platforms without suffering from schema rigidity or write amplification \cite{db:stonebraker2005}. Heterogeneous platforms employ fundamentally disparate data models: relational schemas in SQL, document trees in JSON:API, graph hierarchies in GraphQL, and unstructured DOM trees in server-rendered HTML. To maintain downstream analytical tractability, an intelligence architecture must enforce deterministic canonicalization, strict cryptographic provenance, and transactional reliability across microservices \cite{kleppmann2017designing}.
+
+\section{Canonical Normalization and RFC~8785 Grounding}
+\label{sec:canonicalization}
+
+Wolverine transforms all incoming platform payloads into a uniform, mathematically sound representation known as \texttt{CanonicalRecord}:
+
+\begin{equation}
+\label{eq:canonical_record}
+R_{\text{canon}} = \big\langle \text{recordId}, \text{sourceId}, \text{siteId}, \text{kind}, \text{handle}, \text{displayName}, \text{attributes}, \text{contentHash}, t_{\text{observed}} \big\rangle
+\end{equation}
+
+To ensure that cryptographic signatures and content hashes remain identical across different language runtimes (Node.js, Python, Rust, Go, PHP), attribute serialization adheres to the RFC~8785 JSON Canonicalization Scheme (JCS) \cite{rfc8785}. Payloads that fail JSON Schema validation against \texttt{contracts/canonical-record.schema.json} are immediately routed to a specialized \texttt{Quarantine} relation with an error categorization code, preventing malformed inputs from contaminating downstream entity matching.
+
+\section{Polyglot Persistence Topology}
+\label{sec:persistence_tiers}
+
+The persistence layer is partitioned into specialized stores matching operational access patterns:
+
+\begin{itemize}
+    \item \textbf{MinIO Object Store (Raw Captures):} Immutable S3-compatible blob storage storing raw HTTP response bytes addressed by their SHA-256 content digest, providing an unalterable evidentiary chain of custody.
+    \item \textbf{Core Analytical PostgreSQL (\texttt{postgres-wolverine}):} Hosts the 10 normative Prisma entities representing the complete intelligence lifecycle (\texttt{Source}, \texttt{CollectionRun}, \texttt{Capture}, \texttt{NormalizedRecord}, \texttt{Quarantine}, \texttt{ResolutionCandidate}, \texttt{GraphNode}, \texttt{GraphEdge}, \texttt{Outbox}, \texttt{ProcessedMessage}).
+    \item \textbf{Synthetic Source Databases (\texttt{postgres-sites}, \texttt{mysql-site-c}):} Four isolated PostgreSQL schemas (\texttt{atlas\_market}, \texttt{briar\_bazaar}, \texttt{drift\_forum}, \texttt{ember\_commons}) and one dedicated MySQL 8.4 database (\texttt{cinder\_exchange}).
+    \item \textbf{Ground Truth Vault (\texttt{postgres-truth}):} An isolated PostgreSQL database containing the true seed persona mappings, protected by Docker network isolation.
+\end{itemize}
+
+\section{Transactional Outbox Pattern and Event Streaming}
+\label{sec:outbox_pattern}
+
+To guarantee at-least-once delivery between relational state persistence and asynchronous entity resolution without distributed two-phase commit overhead, Wolverine standardizes on the Transactional Outbox pattern \cite{kleppmann2017designing}. State changes to \texttt{NormalizedRecord} are committed in the exact same database transaction as an \texttt{Outbox} record containing the CloudEvent payload (e.g., \texttt{RecordNormalizedEvent}). A dedicated dispatcher sweeps the Outbox table and publishes events to Redis Streams (Redis 7.2) consumer groups, ensuring robust inter-service decoupling.
+
+\section{In-Memory Graph State Projection}
+\label{sec:graph_state_persistence}
+
+Graph nodes and edges are persisted relationally in \texttt{postgres-wolverine} for long-term storage. However, all active analytical traversal is decoupled from PostgreSQL. Upon startup or ingest, the \texttt{GraphProjector} loads relational node/edge records into in-memory adjacency maps. Graph traversal executes via an in-memory Bounded Breadth-First Search (BFS) capped at depth $d \le 4$ and $N \le 500$ vertices. This completely eliminates PostgreSQL recursive CTE queries, protecting relational database resources from recursive query exhaustion.
+
+\section{Data Architecture Limitations}
+\label{sec:data_limitations}
+
+While the polyglot design achieves high throughput, several limitations exist: (1) in-memory graph state is ephemeral and requires full re-projection upon process restart; (2) Redis Streams delivery guarantees at-least-once semantics, requiring downstream consumers to maintain idempotent deduplication keys via \texttt{ProcessedMessage}; and (3) raw capture storage in MinIO is bounded by single-node container volume constraints.
+
+\section{Research Significance}
+\label{sec:data_significance}
+
+This architecture demonstrates a practical data engineering pattern for cyber threat intelligence: combining RFC~8785 canonicalization, Transactional Outbox eventing, and in-memory bounded graph projection to achieve reproducible, tamper-evident intelligence pipelines across heterogeneous platforms.

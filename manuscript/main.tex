@@ -1,72 +1,151 @@
-\documentclass[11pt,a4paper,twoside,openright]{report}
+﻿\documentclass[11pt,a4paper,twoside,openright]{report}
 
 % Essential packages
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{lmodern}
 \usepackage[margin=1in]{geometry}
-\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{mathtools}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
 \usepackage{titlesec}
 \usepackage{microtype}
 \usepackage{fancyhdr}
 \usepackage{caption}
 \usepackage{subcaption}
-\usepackage{cite} % Traditional BibTeX
+\usepackage{cite}
 \usepackage{tikz}
-\usetikzlibrary{shapes,arrows.meta,positioning,calc,fit,backgrounds}
+\usetikzlibrary{shapes,arrows.meta,positioning,calc,fit,backgrounds,decorations.markings,matrix}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{algorithm2e}
+\usepackage{tabularx}
+\usepackage{pdfpages}
+
+\setlength{\headheight}{14.5pt}
+
+\lstdefinelanguage{JavaScript}{
+  keywords={typeof, new, true, false, catch, function, return, null, switch, var, if, in, while, do, else, case, break, const, let, async, await, class, export, import, from, extends},
+  ndkeywords={class, export, boolean, throw, implements, import, this},
+  sensitive=true,
+  comment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]',
+  morestring=[b]",
+  morestring=[b]
+}
+
+\lstdefinelanguage{TypeScript}{
+  keywords={typeof, new, true, false, catch, function, return, null, switch, var, if, in, while, do, else, case, break, const, let, async, await, class, export, import, from, extends, interface, type, enum, implements, declare, readonly, private, public, protected, abstract, as, is, keyof, any, number, string, boolean, void, never, unknown},
+  ndkeywords={class, export, boolean, throw, implements, import, this},
+  sensitive=true,
+  comment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]',
+  morestring=[b]",
+  morestring=[b]
+}
+
+% Code listing style
+\definecolor{codebg}{rgb}{0.96,0.96,0.96}
+\definecolor{codeframe}{rgb}{0.8,0.8,0.8}
+\definecolor{codekw}{rgb}{0.0,0.0,0.6}
+\definecolor{codecomment}{rgb}{0.4,0.4,0.4}
+\definecolor{codestring}{rgb}{0.0,0.5,0.0}
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestring},
+  breaklines=true,
+  showstringspaces=false,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  tabsize=2,
+  captionpos=b,
+  extendedchars=true
+}
+
+% Custom theorem environments
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{example}{Example}[chapter]
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[chapter]
+
+% Trust zone colors for TikZ
+\definecolor{dmzcolor}{RGB}{255,230,230}
+\definecolor{internalcolor}{RGB}{230,240,255}
+\definecolor{truthcolor}{RGB}{230,255,230}
+\definecolor{dmzborder}{RGB}{200,80,80}
+\definecolor{internalborder}{RGB}{80,120,200}
+\definecolor{truthborder}{RGB}{80,180,80}
 
 % References & Linking
-\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
-\usepackage{cleveref}
+\usepackage[colorlinks=true,linkcolor=blue!70!black,citecolor=green!50!black,urlcolor=blue!60!black]{hyperref}
+\usepackage[capitalise,noabbrev]{cleveref}
 
 % Formatting
 \pagestyle{fancy}
-\fancyhead{}
+\fancyhf{}
 \fancyhead[LE,RO]{\thepage}
-\fancyhead[LO,RE]{\leftmark}
-\fancyfoot{}
+\fancyhead[RE]{\nouppercase{\leftmark}}
+\fancyhead[LO]{\nouppercase{\rightmark}}
 
+\lstnewenvironment{mermaid}[1][]
+  {\lstset{basicstyle=\ttfamily\scriptsize, backgroundcolor=\color{codebg}, frame=single, breaklines=true, #1}}
+  {}
 \begin{document}
 
-% Front Matter
 \include{frontmatter/titlepage}
-\pagenumbering{roman}
 \include{frontmatter/abstract}
-\include{frontmatter/acknowledgements}
-\include{frontmatter/abbreviations}
-
 \tableofcontents
 \listoffigures
 \listoftables
-\clearpage
 
-% Main Content
-\pagenumbering{arabic}
-\include{chapters/01-introduction}
-\include{chapters/02-foundations}
-\include{chapters/03-related-work}
-\include{chapters/04-requirements-threat-model}
-\include{chapters/05-system-architecture}
-\include{chapters/06-data-architecture}
-\include{chapters/07-analytical-methodology}
-\include{chapters/08-implementation}
-\include{chapters/09-experimental-environment}
-\include{chapters/10-evaluation}
-\include{chapters/11-security-ethics}
-\include{chapters/12-discussion}
-\include{chapters/13-future-work}
-\include{chapters/14-conclusion}
+\part{The Wolverine Ecosystem}
+\include{chapters/01-project-ecosystem}
+\include{chapters/02-architecture}
 
-% Appendices
+\part{Data and Analysis}
+\include{chapters/03-data-architecture}
+\include{chapters/04-analytical-methodology}
+
+\part{Core Systems and Security}
+\include{chapters/05-wolverinedb}
+\include{chapters/06-security}
+
+\part{Frontend Applications}
+\include{chapters/07-vzeya}
+\include{chapters/08-analyst-ui}
+
+\part{Evaluation and Conclusion}
+\include{chapters/09-evaluation}
+\include{chapters/10-conclusion}
+
 \appendix
-\include{appendices/appendix-a-synthetic-generator}
-\include{appendices/appendix-b-api-specifications}
-\include{appendices/appendix-c-wolverine-db-specifications}
-\include{appendices/appendix-d-evaluation-harness}
+\include{appendices/A-project-inventory}
+\include{appendices/B-source-site-ecosystem}
+\include{appendices/C-data-dictionary}
+\include{appendices/D-apis}
+\include{appendices/E-wdb-specifications}
+\include{appendices/F-mathematics}
+\include{appendices/G-configuration}
+\include{appendices/H-source-code-listings}
+\include{appendices/I-traceability-matrices}
 
-% Bibliography
-\bibliographystyle{ieeetr}
+\bibliographystyle{IEEEtran}
 \bibliography{bibliography}
 
 \end{document}

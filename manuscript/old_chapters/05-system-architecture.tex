@@ -1,0 +1,308 @@
+\chapter{System Architecture}
+\label{ch:system-architecture}
+
+The Wolverine SIH prototype is engineered as a secure, distributed microservices architecture designed specifically to isolate adversarial data ingestion from sensitive analytical workloads and ground-truth evaluation. This chapter details the physical container topology, network trust boundaries, explicit data flows, and architectural failure mitigations, forming the structural basis for the system's analytical capabilities.
+
+\section{Architectural Objectives}
+\label{sec:arch-objectives}
+The architectural design of the prototype is driven by specific requirements defined in \Cref{ch:requirements-threat-model}.
+
+\begin{itemize}
+    \item \textbf{Separation of Public and Analytical Environments:} To protect the integrity of the canonical datastore (FR-05), public ingestion endpoints are isolated from internal processing clusters.
+    \item \textbf{Evaluation Integrity (Truth Vault):} To fulfill the synthetic-only mandate (NFR-04) and ensure objective evaluation (NFR-01), the ground truth is strictly air-gapped from the inference engine (NFR-02), physically preventing "cheating."
+    \item \textbf{Controlled Resource Bounds:} Because graph analysis can lead to exponential memory consumption, the architecture explicitly dictates in-memory processing bounded by hard node/depth limits (NFR-03) rather than relying on unconstrained database joins.
+\end{itemize}
+
+\section{System Context}
+\label{sec:arch-context}
+The Wolverine prototype encompasses several independent actors and subsystems operating within defined boundaries. The primary entities are depicted in \Cref{fig:system-context}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=1.5cm and 2cm,
+    actor/.style={rectangle, draw, rounded corners, fill=gray!10, text centered, text width=2.5cm, minimum height=1cm},
+    system/.style={rectangle, draw, thick, fill=blue!5, text centered, text width=3cm, minimum height=1cm},
+    external/.style={rectangle, draw, dashed, fill=red!5, text centered, text width=3cm, minimum height=1cm},
+    zone/.style={rectangle, draw, dashed, inner sep=10pt},
+    arrow/.style={-Latex, thick}
+]
+
+% Nodes
+\node[actor] (analyst) {Analyst (Human)};
+\node[system, right=of analyst] (ui) {Analyst UI \\ (Functional)};
+\node[system, right=of ui, text width=4cm] (wolverine) {Wolverine System Boundary\\(Processing \& Storage)};
+\node[system, below=of ui] (vzeya) {Vzeya \\ (Presentation)};
+\node[external, right=of wolverine] (synthetic) {Synthetic Generator \\ (External)};
+
+% Zones
+\begin{scope}[on background layer]
+    \node[zone, fit=(wolverine)(ui), fill=internalcolor!20, draw=internalborder, label=above:Internal Zone] (internal_zone) {};
+    \node[zone, fit=(vzeya)(synthetic), fill=dmzcolor!20, draw=dmzborder, label=below:DMZ Zone] (dmz_zone) {};
+    \node[zone, right=2cm of internal_zone, fill=truthcolor!20, draw=truthborder, label=above:Truth Zone, minimum width=3cm, minimum height=2cm] (truth_zone) {postgres-truth};
+\end{scope}
+
+% Arrows
+\draw[arrow] (analyst) -- node[above, font=\scriptsize] {Interacts} (ui);
+\draw[arrow] (analyst) -- node[left, font=\scriptsize] {Views} (vzeya);
+\draw[arrow] (ui) -- node[above, font=\scriptsize] {API Calls} (wolverine);
+\draw[arrow] (wolverine) -- node[above, font=\scriptsize] {Ingests} (synthetic);
+\draw[arrow, dashed, red] (wolverine) -- node[above, font=\scriptsize] {Air-gapped} (truth_zone);
+
+\end{tikzpicture}
+\caption{System Context Diagram illustrating the primary actors, boundaries, and the three operational trust zones.}
+\label{fig:system-context}
+\end{figure}
+
+The primary entities interacting within the system, as shown in \Cref{fig:system-context}, include:
+\begin{itemize}
+    \item \textbf{Analyst (Human):} Interacts exclusively with the functional \textit{Analyst UI}.
+    \item \textbf{Synthetic Source Ecosystem:} Deterministically generated platforms producing varied JSON/HTML payloads.
+    \item \textbf{Ingestion Services:} Adapters mapping heterogeneous formats into canonical records.
+    \item \textbf{Processing Services:} The \textit{Entity Resolver} and \textit{Graph Projector} executing analytical heuristics.
+    \item \textbf{Database/Storage Systems:} Distinct engines (\texttt{postgres}, \texttt{neo4j}, \texttt{redis}, \texttt{minio}) persisting specific data structures.
+    \item \textbf{RAG/LLM Component:} Local Ollama inference generating natural-language narratives.
+    \item \textbf{Evaluator/Truth Environment:} The isolated boundary containing deterministic synthetic assignments.
+    \item \textbf{Presentation Interfaces:} \textit{Vzeya} (cinematic mock UI) and \textit{Analyst UI} (functional integration).
+\end{itemize}
+
+\section{Environment Topology and Trust Zones}
+\label{sec:arch-topology}
+The system enforces its trust boundaries via three distinct Docker bridge networks, visually represented in \Cref{fig:trust-architecture}.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tikzpicture}[
+    node distance=1cm and 1cm,
+    container/.style={rectangle, draw, rounded corners, fill=white, text centered, text width=2.5cm, minimum height=1cm, font=\small},
+    zone/.style={rectangle, draw, thick, inner sep=15pt, rounded corners},
+    arrow/.style={-Latex, thick},
+    bidir/.style={Latex-Latex, thick}
+]
+
+% DMZ Zone
+\begin{scope}[local bounding box=dmz_box]
+    \node[container] (nginx) {\texttt{nginx}};
+    \node[container, below=of nginx] (mysql_c) {\texttt{mysql-site-c}};
+    \node[container, right=of mysql_c] (pg_sites) {\texttt{postgres-sites}};
+    \node[container, right=of nginx] (vzeya) {\texttt{vzeya}};
+\end{scope}
+\begin{scope}[on background layer]
+    \node[zone, fit=(dmz_box), fill=dmzcolor!30, draw=dmzborder, label={[font=\bfseries]above:wolverine-dmz (Untrusted)}] (dmz_zone) {};
+\end{scope}
+
+% Internal Zone
+\begin{scope}[local bounding box=int_box, shift={(6, 2)}]
+    \node[container] (api) {\texttt{wolverine-api}};
+    \node[container, right=of api] (ui) {\texttt{analyst-ui}};
+    \node[container, below=of api] (resolver) {\texttt{entity-resolver}};
+    \node[container, right=of resolver] (projector) {\texttt{graph-projector}};
+    \node[container, below=of resolver] (ollama) {\texttt{ollama}};
+    
+    \node[container, right=1.5cm of ui] (pg_wdb) {\texttt{postgres-wdb}};
+    \node[container, below=of pg_wdb] (neo4j) {\texttt{neo4j}};
+    \node[container, below=of neo4j] (redis) {\texttt{redis}};
+    \node[container, below=of redis] (minio) {\texttt{minio}};
+\end{scope}
+\begin{scope}[on background layer]
+    \node[zone, fit=(int_box), fill=internalcolor!30, draw=internalborder, label={[font=\bfseries]above:wolverine-internal (Semi-Trusted)}] (int_zone) {};
+\end{scope}
+
+% Truth Zone
+\begin{scope}[local bounding box=truth_box, shift={(14, 0)}]
+    \node[container] (pg_truth) {\texttt{postgres-truth}};
+\end{scope}
+\begin{scope}[on background layer]
+    \node[zone, fit=(truth_box), fill=truthcolor!30, draw=truthborder, label={[font=\bfseries]above:wolverine-truth (Air-Gapped)}] (truth_zone) {};
+\end{scope}
+
+% Connections
+\draw[arrow] (api) -- node[above, font=\scriptsize] {Ingest} (nginx);
+\draw[arrow] (ui) -- (api);
+\draw[bidir] (api) -- (pg_wdb);
+\draw[bidir] (api) -- (redis);
+\draw[bidir] (resolver) -- (redis);
+\draw[bidir] (projector) -- (redis);
+\draw[bidir] (resolver) -- (pg_wdb);
+\draw[arrow] (projector) -- (neo4j);
+\draw[bidir] (api) -- (minio);
+\draw[bidir] (api) -- (ollama);
+
+\draw[arrow, red, dashed, very thick] (int_zone.east) -- node[above, font=\scriptsize, text=red] {BLOCKED} (truth_zone.west);
+
+\end{tikzpicture}
+}
+\caption{Trust Zone Architecture Diagram showing 14 containers distributed across Docker networks.}
+\label{fig:trust-architecture}
+\end{figure}
+
+The distribution across the networks outlined in \Cref{fig:trust-architecture} is defined as follows:
+
+\subsection{\texttt{wolverine-dmz}}
+\textbf{Purpose:} Hostile boundary simulation. Contains public-facing proxy endpoints and synthetic source platforms. \\
+\textbf{Members:} \texttt{nginx}, \texttt{vzeya}, \texttt{postgres-sites}, \texttt{mysql-site-c}. \\
+\textbf{Communication Rules:} Can receive external traffic. Can be queried by internal adapters. Cannot initiate connections to the internal network. \\
+\textbf{Trust Level:} Untrusted.
+
+\subsection{\texttt{wolverine-internal}}
+\textbf{Purpose:} The analytical core processing canonicalized data. \\
+\textbf{Members:} \texttt{analyst-ui}, \texttt{wolverine-api}, \texttt{entity-resolver}, \texttt{graph-projector}, \texttt{ollama}, \texttt{postgres-wdb}, \texttt{neo4j}, \texttt{redis}, \texttt{minio}. \\
+\textbf{Communication Rules:} Can query the DMZ. Services communicate synchronously via HTTP/REST or asynchronously via Redis. Denied external outbound internet access. \\
+\textbf{Trust Level:} Semi-Trusted.
+
+\subsection{\texttt{wolverine-truth}}
+\textbf{Purpose:} Air-gapped storage for synthetic evaluation assignments. \\
+\textbf{Members:} \texttt{postgres-truth}. \\
+\textbf{Isolation Mechanism:} Governed by the \texttt{internal: true} Docker directive. This explicitly drops all inbound/outbound packets to the external network and the internal processing network. \\
+\textbf{Trust Level:} Strictly Trusted.
+
+\section{Container-Level Architecture}
+\label{sec:arch-containers}
+The architecture comprises 14 verified containerized services, orchestrated via \texttt{docker-compose.yml}. \Cref{tab:detailed-containers} extends the specification with network mapping, host ports, and operational health checks.
+
+\begin{table}[htbp]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{p{0.15\textwidth} p{0.10\textwidth} p{0.15\textwidth} p{0.15\textwidth} p{0.15\textwidth} p{0.15\textwidth} p{0.25\textwidth}}
+\toprule
+\textbf{Container} & \textbf{Network} & \textbf{Host Ports} & \textbf{Image Info} & \textbf{Health Check} & \textbf{Persistence Role} & \textbf{Role / Function} \\
+\midrule
+\texttt{nginx} & \texttt{dmz} & 80:80 & \texttt{nginx:alpine} & Port 80 & None & Reverse proxy and rate limiter (T-03). \\
+\texttt{vzeya} & \texttt{dmz} & 3000:3000 & Custom Node & HTTP / & None & Cinematic UI (Mock data only). \\
+\texttt{analyst-ui} & \texttt{internal} & 5173:5173 & Custom Node & HTTP / & None & Functional analytical UI. \\
+\texttt{wolverine-api} & \texttt{internal} & 4000:4000 & Custom Node & HTTP /health & None & Core REST orchestration. \\
+\texttt{entity-resolver} & \texttt{internal} & None & Custom Node & Process & None & Background candidate generation. \\
+\texttt{graph-projector} & \texttt{internal} & None & Custom Node & Process & None & Bounded BFS graph generation. \\
+\texttt{ollama} & \texttt{internal} & 11434:11434 & \texttt{ollama/ollama} & HTTP /api/tags & None & Llama-3.2 RAG synthesis. \\
+\texttt{postgres-wdb} & \texttt{internal} & 5432:5432 & \texttt{postgres:15} & \texttt{pg\_isready} & Canonical/Linkages & Core relational storage (WolverineDB). \\
+\texttt{neo4j} & \texttt{internal} & 7474, 7687 & \texttt{neo4j:5} & Cypher ping & Adjacency Graphs & Bounded graph projection storage. \\
+\texttt{redis} & \texttt{internal} & 6379:6379 & \texttt{redis:7.2} & \texttt{redis-cli ping} & Ephemeral State & Pub/Sub broker for async processing. \\
+\texttt{minio} & \texttt{internal} & 9000, 9001 & \texttt{minio/minio} & HTTP /minio & Immutable Objects & Raw HTTP capture storage. \\
+\texttt{postgres-sites} & \texttt{dmz} & 3001-3004 & \texttt{postgres:15} & \texttt{pg\_isready} & Synthetic Data & Hosts Atlas, Briar, Drift, Ember DBs. \\
+\texttt{mysql-site-c} & \texttt{dmz} & 3005 & \texttt{mysql:8} & \texttt{mysqladmin ping} & Synthetic Data & Hosts Cinder Exchange DB. \\
+\texttt{postgres-truth} & \texttt{truth} & 5433:5432 & \texttt{postgres:15} & \texttt{pg\_isready} & Ground Truth & Air-gapped synthetic identity map. \\
+\bottomrule
+\end{tabular}
+}
+\caption{Detailed 14-Container Architecture Inventory including Ports and Health Status.}
+\label{tab:detailed-containers}
+\end{table}
+
+\section{Service Dependency Graph}
+\label{sec:arch-dependency}
+Services operate via varying dependencies, mapped in \Cref{tab:dependency-matrix}.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{p{0.25\textwidth} p{0.3\textwidth} p{0.4\textwidth}}
+\toprule
+\textbf{Consumer} & \textbf{Provider} & \textbf{Interaction Type} \\
+\midrule
+\texttt{analyst-ui} & \texttt{wolverine-api} & Synchronous HTTP/REST (Blocking) \\
+\texttt{wolverine-api} & \texttt{ollama} & Synchronous HTTP/REST (Blocking with Fallback) \\
+\texttt{wolverine-api} & \texttt{postgres-wdb} & Synchronous TCP (Blocking) \\
+\texttt{wolverine-api} & \texttt{redis} & Asynchronous Pub/Sub (Fire-and-forget) \\
+\texttt{entity-resolver} & \texttt{redis} & Asynchronous Consumer \\
+\texttt{graph-projector} & \texttt{redis} & Asynchronous Consumer \\
+\texttt{graph-projector} & \texttt{neo4j} & Synchronous Bolt/TCP \\
+\bottomrule
+\end{tabular}
+\caption{Synchronous vs. Asynchronous Dependency Matrix}
+\label{tab:dependency-matrix}
+\end{table}
+
+\begin{itemize}
+    \item \textbf{Synchronous Dependency:} \texttt{analyst-ui} blocks on \texttt{wolverine-api}. \texttt{wolverine-api} blocks on \texttt{ollama} during RAG generation.
+    \item \textbf{Asynchronous Dependency:} \texttt{wolverine-api} publishes to \texttt{redis}. \texttt{entity-resolver} and \texttt{graph-projector} consume from \texttt{redis}. If processors crash, the API continues operating.
+    \item \textbf{Storage Dependency:} All internal Node.js services mandate \texttt{postgres-wdb} availability for state retention.
+    \item \textbf{Fallback Dependency:} If \texttt{ollama} times out, \texttt{wolverine-api} falls back to deterministic rule-based strings, treating \texttt{ollama} as an optional enhancement rather than a hard failure point.
+\end{itemize}
+
+\section{Data-Flow Architecture}
+\label{sec:arch-data-flow}
+Data transits strictly in a unidirectional sequence from public ingestion to analytical synthesis. This lifecycle is visualized in \Cref{fig:data-flow}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm and 1.2cm,
+    stage/.style={rectangle, draw, rounded corners, fill=blue!10, text centered, text width=2.5cm, minimum height=1cm, font=\small},
+    arrow/.style={-Latex, thick}
+]
+
+\node[stage] (s1) {1. Collection};
+\node[stage, right=of s1] (s2) {2. Capture};
+\node[stage, right=of s2] (s3) {3. Normalization};
+\node[stage, right=of s3] (s4) {4. Persistence};
+\node[stage, below=of s4] (s5) {5. Entity\\Resolution};
+\node[stage, left=of s5] (s6) {6. Graph\\Projection};
+\node[stage, left=of s6] (s7) {7. Retrieval};
+\node[stage, left=of s7] (s8) {8. RAG\\Synthesis};
+
+\draw[arrow] (s1) -- (s2);
+\draw[arrow] (s2) -- (s3);
+\draw[arrow] (s3) -- (s4);
+\draw[arrow] (s4) -- (s5);
+\draw[arrow] (s5) -- (s6);
+\draw[arrow] (s6) -- (s7);
+\draw[arrow] (s7) -- (s8);
+
+\end{tikzpicture}
+\caption{The 8-stage Data Lifecycle from initial ingestion to natural language RAG synthesis.}
+\label{fig:data-flow}
+\end{figure}
+
+The steps outlined in \Cref{fig:data-flow} are implemented as follows:
+\begin{enumerate}
+    \item \textbf{Collection:} \texttt{wolverine-api} issues GET requests to \texttt{nginx} (DMZ).
+    \item \textbf{Capture:} Raw bytes stored immutably in \texttt{minio} (S3-compatible blob storage).
+    \item \textbf{Normalization:} Parsers execute in \texttt{wolverine-api}, converting payloads to \texttt{CanonicalRecord}.
+    \item \textbf{Persistence:} Canonical record inserted into \texttt{postgres-wdb}, generating WolverineDB Merkle hashes.
+    \item \textbf{Entity Resolution:} \texttt{redis} triggers \texttt{entity-resolver}, which fetches Canonical records, calculates Jaro-Winkler similarities, and persists pairwise links back to \texttt{postgres-wdb}.
+    \item \textbf{Graph Projection:} \texttt{graph-projector} builds bounded BFS graphs and flushes them to \texttt{neo4j}.
+    \item \textbf{Retrieval:} \texttt{analyst-ui} queries graph, fetching nodes/edges from \texttt{neo4j}.
+    \item \textbf{RAG:} \texttt{wolverine-api} sanitizes context, requests synthesis from \texttt{ollama}, and returns the narrative.
+\end{enumerate}
+\textit{Note:} \texttt{vzeya} explicitly does not participate in this data flow; it renders hardcoded visual mock arrays.
+
+\section{Trust Boundaries}
+\label{sec:arch-trust}
+Evaluating the flow of data exposes critical trust boundaries, summarized in \Cref{tab:trust-boundaries}.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{p{0.25\textwidth} p{0.3\textwidth} p{0.35\textwidth}}
+\toprule
+\textbf{Boundary} & \textbf{Assets Crossing} & \textbf{Control / Residual Risk} \\
+\midrule
+\textbf{DMZ $\rightarrow$ Internal} & Raw JSON/HTML payloads, Image binaries. & Nginx limits; Schema parsing validates types in API. Risk: Unhandled payload exploits Node.js V8 engine or memory overflow. \\
+\addlinespace
+\textbf{Internal $\rightarrow$ Ollama} & Canonical data (User text, handles, attributes). & 4-rule Regex sanitization to strip injection sequences. Risk: Advanced prompt injection bypassing regex and poisoning the RAG output. \\
+\addlinespace
+\textbf{Internal $\leftrightarrow$ Truth Vault} & NONE. Strict physical separation. & Docker \texttt{internal: true} network air-gap. Risk: Docker daemon exploit or physical host compromise. \\
+\bottomrule
+\end{tabular}
+\caption{Detailed Trust Boundary Analysis}
+\label{tab:trust-boundaries}
+\end{table}
+
+\section{Failure Architecture}
+\label{sec:arch-failure}
+The system explicitly handles specific degradation paths to maintain partial availability:
+\begin{itemize}
+    \item \textbf{Parser Fails (Malformed Source):} API logs a \texttt{SchemaValidationError} and drops the canonicalization. Raw data remains in \texttt{minio} for later reprocessing.
+    \item \textbf{LLM Unavailable/Timeout:} API defaults to deterministic string output; \texttt{analyst-ui} remains responsive.
+    \item \textbf{Graph Exceeds Limits:} \texttt{graph-projector} strictly halts traversal at 500 nodes to prevent V8 memory exhaustion (OOM), accepting a truncated graph rather than crashing.
+    \item \textbf{Redis Unavailable:} Async pipelines halt. API continues serving synchronous frontend queries but no new entity resolutions or graph updates trigger.
+    \item \textbf{Neo4j Unavailable:} \texttt{graph-projector} gracefully fails its flush operations, logging the failed sync. Retrieval APIs return empty structures rather than HTTP 500 errors.
+    \item \textbf{MinIO Unreachable:} API bypasses raw capture and proceeds directly to normalization if possible, logging a partial ingestion warning.
+\end{itemize}
+
+\section{Architectural Trade-offs}
+\label{sec:arch-tradeoffs}
+\subsection{In-Memory Graph Projection}
+Relying on in-memory BFS mapping prioritizes raw demonstration speed and determinism over infinite horizontal scalability. While production intelligence systems utilize distributed graph engines (e.g., executing Cypher or recursive SQL CTEs), Wolverine opts for local \texttt{Map} objects. This bounds resource consumption explicitly, at the cost of being unable to traverse networks exceeding 500 nodes in a single query.
+
+\subsection{WolverineDB Simulation Boundaries}
+WolverineDB defines robust cryptographic interfaces (KMS signatures, EVM anchoring). However, the prototype fulfills these interfaces via simulated, in-process implementations (e.g., \texttt{DirectMemoryNetworkTransport}). This allows the architecture to prove algorithmic viability (Merkle hashing) without requiring a physical, multi-node decentralized deployment. Consequently, the prototype is highly portable but unverified against live Byzantine network delays.

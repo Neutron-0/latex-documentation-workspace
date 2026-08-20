@@ -1,0 +1,104 @@
+\chapter{Analytical Methodology}
+\label{chap:analytical_methodology}
+
+\section{Problem Formalization and Mathematical Foundations}
+\label{sec:math_problem}
+
+Cross-platform entity resolution (ER) aims to infer whether two distinct observed digital identities $r_a, r_b \in \mathcal{R}$ correspond to the same underlying real-world entity $e \in \mathcal{E}$ in the absence of a shared unique identifier \cite{fellegi1969theory, getoor2012entity}. Given an intercepted dataset of size $N = |\mathcal{R}|$, an exhaustive pairwise evaluation requires computing $O(N^2)$ similarity vectors, which becomes computationally intractable for large populations ($N = 89,605$ accounts in the Wolverine benchmark yields $\approx 4.01 \times 10^9$ candidate pairs) \cite{christen2012data}.
+
+To achieve tractable, high-precision identity correlation without ground-truth oracle leakage, Wolverine formalizes a multi-tier analytical methodology: (1) deterministic multi-attribute blocking to reduce candidate pairs to linear complexity; (2) fine-grained string distance metrics for handle and display name comparison \cite{cohen2003comparison}; (3) linear temporal decay modeling; (4) composite feature weighting; and (5) strict decision boundary classification.
+
+\section{Blocking Function Formulation}
+\label{sec:blocking_strategy}
+
+To reduce the quadratic comparison space, entities are mapped into discrete comparison blocks via a deterministic composite key function $B(r)$:
+
+\begin{equation}
+\label{eq:blocking_key}
+B(r) = \big\langle \text{prefix}_3(\text{norm}(r.\text{handle})), \, \text{domain}(r.\text{email}), \, \text{epochWeek}(r.\text{registeredAt}) \big\rangle
+\end{equation}
+
+where $\text{norm}(h)$ strips non-alphanumeric characters and lowercases the handle (defaulting to \texttt{"gen"} if $|h| < 3$). Candidate pairs $\mathcal{C}$ are generated exclusively between records sharing at least one blocking key component:
+
+\begin{equation}
+\mathcal{C} = \big\{ (r_a, r_b) \in \mathcal{R} \times \mathcal{R} \mid B(r_a) \cap B(r_b) \neq \emptyset \land r_a.\text{siteId} \neq r_b.\text{siteId} \big\}
+\end{equation}
+
+This heuristic prunes $>99.9\%$ of disjoint pairs, restricting scoring to plausible candidates.
+
+\section{String Distance Metrics: Jaro and Jaro-Winkler}
+\label{sec:string_metrics}
+
+For alphanumeric handle and display name comparison, the engine employs the Jaro and Jaro-Winkler string similarity metrics \cite{jaro1989advances, winkler1990string, navarro2001guided}. For strings $s_1, s_2$, the Jaro similarity is:
+
+\begin{equation}
+\label{eq:jaro}
+d_J(s_1, s_2) = \begin{cases}
+0 & \text{if } m = 0 \\
+\frac{1}{3} \left( \frac{m}{|s_1|} + \frac{m}{|s_2|} + \frac{m - t}{m} \right) & \text{otherwise}
+\end{cases}
+\end{equation}
+
+where $m$ is the count of matching characters within a sliding window $\lfloor \frac{\max(|s_1|, |s_2|)}{2} \rfloor - 1$, and $t$ is the number of transpositions. To reward common handle root prefixes frequently preserved during adversary alias modification, the Jaro-Winkler metric is computed as:
+
+\begin{equation}
+\label{eq:jaro_winkler}
+d_W(s_1, s_2) = d_J(s_1, s_2) + \ell \cdot p \cdot \big(1 - d_J(s_1, s_2)\big)
+\end{equation}
+
+where $\ell = \min(4, \text{commonPrefixLength}(s_1, s_2))$ and $p = 0.1$ is the constant prefix scale factor.
+
+\section{Feature Engineering and Weighted Composite Scoring}
+\label{sec:composite_scoring}
+
+The similarity vector between candidate records $r_a, r_b$ comprises five distinct feature signals:
+
+\begin{enumerate}
+    \item \textbf{Alias Similarity ($S_{\text{alias}}$):} $d_W(\text{norm}(r_a.\text{handle}), \text{norm}(r_b.\text{handle}))$.
+    \item \textbf{Display Name Similarity ($S_{\text{disp}}$):} $d_W(\text{lower}(r_a.\text{displayName}), \text{lower}(r_b.\text{displayName}))$.
+    \item \textbf{Linear Temporal Proximity ($S_{\text{temp}}$):} Measures registration window closeness over a bounded 30-day half-life:
+    \begin{equation}
+    \label{eq:temporal_decay}
+    S_{\text{temp}}(r_a, r_b) = \max\left(0, \, 1 - \frac{|t_{\text{reg}}(r_a) - t_{\text{reg}}(r_b)|}{30 \times 86400}\right)
+    \end{equation}
+    \item \textbf{Activity Overlap ($S_{\text{act}}$):} Baseline activity coefficient, set to static constant $0.5$ in the benchmark.
+    \item \textbf{Cross-Site Linguistic Cue ($S_{\text{cue}}$):} Binary prefix cue indicating common 4-character prefix root ($S_{\text{cue}} \in \{0.0, 1.0\}$).
+\end{enumerate}
+
+The final composite score $S(r_a, r_b)$ is computed as the weighted linear combination:
+
+\begin{equation}
+\label{eq:composite_score}
+S(r_a, r_b) = 0.30 \cdot S_{\text{alias}} + 0.15 \cdot S_{\text{disp}} + 0.20 \cdot S_{\text{temp}} + 0.15 \cdot S_{\text{act}} + 0.20 \cdot S_{\text{cue}}
+\end{equation}
+
+\section{Classification Boundaries and Decision Rules}
+\label{sec:decision_rules}
+
+The clamped score $S \in [0.0, 1.0]$ drives candidate state classification:
+
+\begin{equation}
+\label{eq:classification_rules}
+\text{State}(r_a, r_b) = \begin{cases}
+\text{linked} & \text{if } S \ge 0.92 \quad (\text{Deterministic automated link}) \\
+\text{review} & \text{if } 0.70 \le S < 0.92 \quad (\text{Human analyst review queue}) \\
+\text{rejected} & \text{if } S < 0.70 \quad (\text{Persistent discard})
+\end{cases}
+\end{equation}
+
+\section{Adversarial RAG Input Sanitization}
+\label{sec:rag_sanitization}
+
+When raw unstructured post text or forum bios are queried by the Retrieval-Augmented Generation (RAG) assistant \cite{lewis2020retrieval, gao2024retrieval}, they represent untrusted adversarial inputs susceptible to prompt injection \cite{perez2022ignore, greshake2023not, liu2024formalizing}. The \texttt{AIAssistant} class in \texttt{wolverine/src/ai/rag.ts} enforces a mandatory 4-rule sanitization pipeline:
+
+\begin{enumerate}
+    \item \textbf{Control Character Stripping:} Eliminates ASCII control characters ($\text{0x00}--\text{0x1F}$) excluding standard whitespace ($\backslash\text{n}, \backslash\text{t}$).
+    \item \textbf{Length Truncation:} Enforces a strict 500-character ceiling per evidence passage.
+    \item \textbf{Injection Pattern Redaction:} Strips known adversarial delimiters and instruction prefixes (e.g., \texttt{<|im\_start|>}, \texttt{[INST]}, \texttt{Ignore previous instructions}).
+    \item \textbf{Strict Schema Enforcement:} Prompts local Ollama models (5000ms timeout) to output rigid JSON with explicit record citations, degrading to a deterministic $0.75$ confidence heuristic if the LLM becomes unresponsive.
+\end{enumerate}
+
+\section{Methodological Limitations}
+\label{sec:methodology_limitations}
+
+Key limitations include: (1) the 3-character prefix blocking key is vulnerable to adversarial noise injection (e.g., prepending arbitrary characters to handles); (2) the activity overlap score is a static constant ($0.5$) rather than a dynamic Jaccard index; and (3) prompt sanitization via regular expressions provides baseline defense but cannot formally eliminate semantic indirect prompt injection.

@@ -1,0 +1,192 @@
+\chapter{Data Dictionaries}
+\label{app:data-dictionaries}
+
+This appendix provides a comprehensive data dictionary documenting the Prisma schema utilized in the Wolverine system for storing configuration, raw payloads, normalized records, and derived resolution states.
+
+\section{Entity Definitions}
+
+\subsection{Source}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & Int & PK, Auto-increment & Internal primary key \\
+name & String & UNIQUE NOT NULL & Platform identifier (e.g., atlas, briar, cinder, drift, ember) \\
+baseUrl & String & NOT NULL & Base API endpoint URL \\
+apiType & String & NOT NULL & Access protocol (rest, graphql, html) \\
+createdAt & DateTime & DEFAULT now() & Record creation timestamp \\
+\bottomrule
+\end{tabular}
+\caption{Source Entity Schema}
+\end{table}
+
+\subsection{CollectionRun}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & Int & PK & Internal primary key \\
+sourceId & Int & FK $\rightarrow$ Source & Reference to the target Source \\
+status & String & NOT NULL & State enum: pending, running, completed, or failed \\
+startedAt & DateTime & NOT NULL & Timestamp when execution began \\
+completedAt & DateTime & NULLABLE & Timestamp when execution finished \\
+recordsCollected & Int & DEFAULT 0 & Total number of raw payloads fetched \\
+errorMessage & String & NULLABLE & Failure details if status is failed \\
+\bottomrule
+\end{tabular}
+\caption{CollectionRun Entity Schema}
+\end{table}
+
+\subsection{Capture}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & Int & PK & Internal primary key \\
+collectionRunId & Int & FK $\rightarrow$ CollectionRun & The run that fetched this data \\
+locator & String & NOT NULL & Specific source URL or path \\
+contentHash & String & NOT NULL & SHA-256 hash of the raw payload \\
+objectKey & String & NOT NULL & MinIO object key for raw data storage \\
+capturedAt & DateTime & DEFAULT now() & Timestamp of capture \\
+\bottomrule
+\end{tabular}
+\caption{Capture Entity Schema}
+\end{table}
+
+\subsection{NormalizedRecord}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & String & PK (UUIDv4) & Unique canonical record identifier \\
+captureId & Int & FK $\rightarrow$ Capture & Reference to the raw capture \\
+sourceId & Int & FK $\rightarrow$ Source & Platform source origin \\
+recordType & String & NOT NULL & Type enum: account, listing, post, reply \\
+recordData & JSON & NOT NULL & Parsed and normalized canonical payload \\
+contentHash & String & NOT NULL & SHA-256 of the normalized data \\
+normalizedAt & DateTime & DEFAULT now() & Timestamp of normalization \\
+\bottomrule
+\end{tabular}
+\caption{NormalizedRecord (CanonicalRecord) Entity Schema}
+\end{table}
+
+\subsection{Quarantine}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & Int & PK & Internal primary key \\
+captureId & Int & FK $\rightarrow$ Capture & The raw capture that failed parsing \\
+errorCode & String & NOT NULL & Standardized error classification \\
+errorMessage & String & NULLABLE & Detailed parser exception \\
+rawSnippet & String & NULLABLE & First 500 characters of the failed payload \\
+quarantinedAt & DateTime & DEFAULT now() & Timestamp of quarantine placement \\
+\bottomrule
+\end{tabular}
+\caption{Quarantine Entity Schema}
+\end{table}
+
+\subsection{ResolutionCandidate}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & Int & PK & Internal primary key \\
+recordAId & String & FK $\rightarrow$ NormalizedRecord & First canonical record \\
+recordBId & String & FK $\rightarrow$ NormalizedRecord & Second canonical record \\
+compositeScore & Float & NOT NULL & Overall similarity confidence score \\
+featureScores & JSON & NOT NULL & Dictionary of individual feature weights \\
+state & String & DEFAULT 'pending' & Status enum: pending, linked, review, rejected \\
+resolvedAt & DateTime & NULLABLE & Timestamp when a final state was reached \\
+resolvedBy & String & NULLABLE & Analyst handle for HITL review audits \\
+\bottomrule
+\end{tabular}
+\caption{ResolutionCandidate Entity Schema}
+\end{table}
+
+\subsection{GraphNode}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & String & PK & Unique graph node identifier \\
+normalizedRecordId & String & FK $\rightarrow$ NormalizedRecord & Corresponding canonical record \\
+label & String & NOT NULL & Node classification label \\
+firstSeenAt & DateTime & NOT NULL & Initial observation timestamp \\
+lastSeenAt & DateTime & NOT NULL & Most recent observation timestamp \\
+\bottomrule
+\end{tabular}
+\caption{GraphNode Entity Schema}
+\end{table}
+
+\subsection{GraphEdge}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & Int & PK & Internal primary key \\
+sourceNodeId & String & FK $\rightarrow$ GraphNode & Starting node for a directed edge \\
+targetNodeId & String & FK $\rightarrow$ GraphNode & Terminating node for a directed edge \\
+edgeType & String & NOT NULL & Relationship: linked, authored, replied, listed, reputation \\
+weight & Float & NULLABLE & Edge weight or confidence value \\
+\bottomrule
+\end{tabular}
+\caption{GraphEdge Entity Schema}
+\end{table}
+
+\subsection{Outbox}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & Int & PK & Internal primary key \\
+eventType & String & NOT NULL & Category of the domain event \\
+payload & JSON & NOT NULL & Serialized event data \\
+createdAt & DateTime & DEFAULT now() & When the event was generated \\
+publishedAt & DateTime & NULLABLE & When the event was dispatched successfully \\
+\bottomrule
+\end{tabular}
+\caption{Outbox Entity Schema}
+\end{table}
+
+\subsection{ProcessedMessage}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{lllp{6cm}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Constraint} & \textbf{Description} \\
+\midrule
+id & Int & PK & Internal primary key \\
+messageId & String & UNIQUE NOT NULL & Unique ID from the messaging queue \\
+processedAt & DateTime & DEFAULT now() & Timestamp of successful idempotency check \\
+\bottomrule
+\end{tabular}
+\caption{ProcessedMessage Entity Schema}
+\end{table}
+
+\section{Entity-Relationship Summary}
+The core workflow is driven by the \texttt{Source} entity, which establishes the platforms to be monitored. A \texttt{CollectionRun} represents an invocation against a \texttt{Source} and yields multiple \texttt{Capture} entities. Each \texttt{Capture} acts as a pointer to raw payloads in MinIO. 
+
+Successfully parsed \texttt{Capture} instances map exactly one-to-one to a \texttt{NormalizedRecord} (often referred to as a Canonical Record). If parsing fails, the system bypasses this and creates a \texttt{Quarantine} entity referencing the failed \texttt{Capture}. 
+
+The \texttt{ResolutionCandidate} links two \texttt{NormalizedRecord} entities together for identity resolution, storing similarity metrics and human-in-the-loop audit data. Concurrently, normalized data populates the graph topology, where \texttt{GraphNode} entities wrap \texttt{NormalizedRecord} entities and are connected via \texttt{GraphEdge} relations representing semantic linkages (such as `authored` or `replied`). 
+
+Finally, the \texttt{Outbox} and \texttt{ProcessedMessage} entities are infrastructural, managing transactional outbox patterns for domain event publishing and idempotency across asynchronous messaging queues.

@@ -1,0 +1,40 @@
+flowchart TB
+    subgraph DMZ ["wolverine-dmz (Untrusted)"]
+        nginx["nginx\n(reverse proxy)"]
+        sites-pg["postgres-sites\n(Atlas,Briar,Drift,Ember)"]
+        mysql-c["mysql-site-c\n(Cinder Exchange)"]
+    end
+
+    subgraph Internal ["wolverine-internal (Semi-Trusted)"]
+        api["wolverine-api\n(Express.js)"]
+        er["entity-resolver\n(daemon)"]
+        gp["graph-projector\n(daemon)"]
+        redis["Redis 7.2\n(Pub/Sub)"]
+        pg-wdb["postgres-wdb\n(Canonical Records)"]
+        neo4j["Neo4j\n(Graph Store)"]
+        minio["MinIO\n(Object Store)"]
+        ollama["Ollama\n(Llama-3.2)"]
+        analyst["analyst-ui\n(Vite/React)"]
+    end
+
+    subgraph Truth ["wolverine-truth (Strictly Trusted)"]
+        pg-truth["postgres-truth\n(Ground Truth)"]
+    end
+
+    nginx --> api
+    api -->|sync| pg-wdb
+    api -->|sync| minio
+    api -->|sync| ollama
+    api -->|pub| redis
+    redis -->|sub| er
+    redis -->|sub| gp
+    er --> pg-wdb
+    gp --> pg-wdb
+    gp --> neo4j
+    analyst -->|HTTP| api
+    api -->|GET| sites-pg
+    api -->|GET| mysql-c
+
+    style DMZ fill:#ffe6e6,stroke:#c85050
+    style Internal fill:#e6f0ff,stroke:#5078c8
+    style Truth fill:#e6ffe6,stroke:#50b450

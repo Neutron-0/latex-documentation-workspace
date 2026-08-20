@@ -1,0 +1,89 @@
+\chapter{Future Work}
+\label{ch:future-work}
+
+The Wolverine prototype demonstrates the architectural integration necessary for automated threat intelligence, yet explicitly operates within the constraints of a simulated environment. This chapter outlines the rigorous technical transitions required to elevate the system from a Class B (Functional) prototype to a Class A (Empirical) production engine, structured as a prioritized roadmap of engineering and research evolution.
+
+\section{WolverineDB Evolution}
+\label{sec:fw-wolverinedb}
+\begin{itemize}
+    \item \textbf{Current Limitation:} While replay protection has been migrated to a durable PostgreSQL table locally, WolverineDB's BFT consensus network is simulated entirely via in-process memory (\texttt{DirectMemoryNetworkTransport}).
+    \item \textbf{Proposed Change:} Replace the memory transport interface with a genuine TCP/IP Gossip protocol or gRPC quorum network. Subsequently, distributed replay protection across independently replicated nodes must be implemented to prevent decentralized race conditions.
+    \item \textbf{Technical Mechanism:} Implement the Raft or PBFT consensus algorithm across physically isolated PostgreSQL instances.
+    \item \textbf{Expected Benefit:} Authentic distributed Byzantine fault tolerance, validating the \texttt{WDB-02} formal specification against real network partition events.
+\end{itemize}
+
+\section{Graph Infrastructure Evolution}
+\label{sec:fw-graph}
+\begin{itemize}
+    \item \textbf{Current Limitation:} Graph projection relies on an in-memory BFS string comparison limited to $d \le 4, N \le 500$, truncating deeper network discovery.
+    \item \textbf{Proposed Change:} Decouple projection from application memory. Utilize a dedicated, disk-backed distributed graph database (e.g., native Neo4j Apoc traversals or NebulaGraph).
+    \item \textbf{Required Infrastructure:} High-memory cluster nodes optimized for iterative graph processing (e.g., Apache Spark GraphX).
+    \item \textbf{Expected Benefit:} Ability to query and traverse subgraphs containing millions of vertices asynchronously without endangering API availability.
+\end{itemize}
+
+\section{Entity Resolution Evolution}
+\label{sec:fw-er}
+\begin{itemize}
+    \item \textbf{Current Limitation:} Linkage heuristics are deterministic and fixed (e.g., $0.30$ alias weight, simulated $0.5$ activity overlap), lacking the ability to learn complex obfuscation patterns.
+    \item \textbf{Proposed Change:} Transition from deterministic heuristics to calibrated probabilistic linkage (e.g., trained Fellegi-Sunter) or Graph Neural Networks (GNNs).
+    \item \textbf{Technical Mechanism:} Implement dynamic feature extraction (e.g., true temporal event intersection, stylometric NLP embeddings for forum posts) and train a gradient boosting classifier (e.g., XGBoost) on the synthetic ground truth.
+    \item \textbf{Required Evaluation:} This necessitates the dynamic benchmark pipeline (Section \ref{sec:fw-evaluation}) to prevent catastrophic overfitting.
+\end{itemize}
+
+\section{Evaluation Evolution}
+\label{sec:fw-evaluation}
+To replace the static Class D metric artifacts, a formal evaluation progression must be executed:
+\begin{enumerate}
+    \item \textbf{Dynamic Synthetic Benchmark:} Implement a pipeline that dynamically computes Precision, Recall, and F1 by comparing resolver outputs against the \texttt{postgres-truth} vault.
+    \item \textbf{Ablation Studies:} Isolate the impact of specific heuristic weights (e.g., the 30-day temporal decay) to optimize the composite score.
+    \item \textbf{Threshold Calibration:} Plot ROC/PR curves to mathematically justify the $0.70$ (Review) and $0.92$ (Linked) decision thresholds.
+    \item \textbf{Adversarial Evaluation:} Inject deliberate obfuscation (e.g., character substitution, timeline jitter) into the synthetic engine to test algorithm resilience.
+    \item \textbf{Real-World Validation:} Ingest an anonymized subset of verified historic threat data to measure synthetic-to-real domain shift.
+\end{enumerate}
+
+\section{RAG and LLM Evolution}
+\label{sec:fw-rag}
+\begin{itemize}
+    \item \textbf{Current Limitation:} The 4-rule Regex sanitization provides basic protection but is theoretically vulnerable to semantic prompt smuggling.
+    \item \textbf{Proposed Change:} Implement a dual-LLM architecture.
+    \item \textbf{Technical Mechanism:} Route hostile context through a smaller, strictly constrained "evaluator" LLM tasked exclusively with detecting injection intent before passing sanitized context to the primary synthesis model.
+    \item \textbf{Expected Benefit:} Robust defense against adversarial jailbreaks, ensuring Analyst UI narrative integrity.
+\end{itemize}
+
+\section{Security and Governance Evolution}
+\label{sec:fw-security}
+\begin{itemize}
+    \item \textbf{Current Limitation:} Cryptographic signatures within WolverineDB lack physical anchoring.
+    \item \textbf{Proposed Change:} Integrate AWS CloudHSM or physical YubiKey HSMs to sign Merkle tree commitments.
+    \item \textbf{Governance Evolution:} Implement strict versioned evidence trails (Model Cards) that snapshot the exact heuristic weights active when a specific canonical record was processed, ensuring legal/audit traceability for human review decisions.
+\end{itemize}
+
+\section{Explicit Research Questions}
+\label{sec:fw-research-questions}
+The engineering evolution facilitates the investigation of broader cyber-intelligence research questions:
+\begin{itemize}
+    \item \textit{How does entity-resolution accuracy degrade when synthetic aliases are subjected to increasing levels of Levenshtein perturbation?}
+    \item \textit{What is the quantitative synthetic-to-real domain shift in False Positive Rates when transferring deterministic heuristics to live dark-web telemetry?}
+    \item \textit{How effectively can a secondary evaluator LLM detect semantic prompt injection disguised within adversarial forum payloads?}
+\end{itemize}
+
+\section{Prioritization Roadmap}
+\label{sec:fw-roadmap}
+\begin{table}[h]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{p{0.20\textwidth} p{0.10\textwidth} p{0.20\textwidth} p{0.25\textwidth} p{0.15\textwidth}}
+\toprule
+\textbf{Future Work} & \textbf{Priority} & \textbf{Dependency} & \textbf{Expected Impact} & \textbf{Eng. Cost} \\
+\midrule
+Dynamic Eval Pipeline & \textbf{P0} & None & Unlocks empirical (Class A) metric measurement. & Medium \\
+Durable Replay Cache & \textbf{P1} & None & Mitigates critical container-restart vulnerability. & Low \\
+NLP Feature Extraction & \textbf{P2} & Dynamic Eval & Improves algorithmic recall on distinct handles. & High \\
+Distributed Graph DB & \textbf{P2} & Infrastructure scaling & Eliminates 500-node memory limitation. & High \\
+BFT TCP/IP Transport & \textbf{P3} & Durable Replay Cache & Validates true decentralized trust boundaries. & Very High \\
+\bottomrule
+\end{tabular}
+}
+\caption{Future Work Prioritization Roadmap}
+\label{tab:future-work-roadmap}
+\end{table}

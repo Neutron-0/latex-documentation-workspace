@@ -1,0 +1,60 @@
+\chapter{Mathematical Definitions}
+\label{app:math-definitions}
+
+This appendix provides the formal mathematical definitions and equations foundational to the Wolverine project. It encompasses the formulations for entity resolution, temporal decay mechanisms, graph projection boundaries, consensus protocols, and standard evaluation metrics utilized throughout the system's architecture.
+
+\section{Entity Resolution and Similarity}
+\subsection{Jaro Similarity}
+The Jaro similarity metric, $sim_{j}$, is employed to quantify the edit distance between two strings, $s_1$ and $s_2$. It accounts for character matches and transpositions, and is defined as:
+\begin{equation}
+sim_{j} = \begin{cases}
+0 & \text{if } m = 0 \\
+\frac{1}{3} \left( \frac{m}{|s_1|} + \frac{m}{|s_2|} + \frac{m - t}{m} \right) & \text{otherwise}
+\end{cases}
+\end{equation}
+where $m$ denotes the number of matching characters and $t$ represents half the number of transpositions.
+
+\subsection{Temporal Linear Decay}
+Unlike conventional systems that employ exponential decay models, the temporal relevance $T(d)$ in Wolverine is strictly modeled using a linear 30-day decay function. Given an age in days $d$:
+\begin{equation}
+T(d) = \max\left(0, 1 - \frac{d}{30}\right)
+\end{equation}
+This linear approach ensures predictable degradation of historical signals prior to the 30-day cutoff.
+
+\subsection{Composite Score}
+The composite score $C$ for determining entity linkage represents a weighted aggregation of string similarities, structural context, and the aforementioned temporal decay. The system enforces strict empirical thresholds for deterministic operations:
+\begin{equation}
+C = \alpha \cdot sim_{string} + \beta \cdot T(d) + \gamma \cdot sim_{context}
+\end{equation}
+Linkage decisions are subsequently classified according to the following thresholds:
+\begin{itemize}
+    \item \textbf{Auto-merge:} $C \geq 0.92$
+    \item \textbf{Review queue:} $0.70 \leq C < 0.92$ (requiring human-in-the-loop intervention)
+    \item \textbf{Reject:} $C < 0.70$
+\end{itemize}
+
+\section{Graph and Network Operations}
+\subsection{Bounded Breadth-First Search (BFS)}
+Graph projection avoids database-level recursive constructs (e.g., PostgreSQL recursive CTEs are strictly not used). Instead, traversal is executed via an in-memory Bounded Breadth-First Search (BFS). Let $G = (V, E)$ be the entity graph. The subset of reachable nodes $R_k(v)$ from a central node $v$ within $k$ hops is formally defined as:
+\begin{equation}
+R_k(v) = \{ u \in V \mid d(v, u) \leq k \}
+\end{equation}
+where $d(v, u)$ denotes the shortest path distance. To guarantee computational bounds and prevent out-of-memory states, the exploration cardinality is bounded by a maximum traversal limit, $|R_k(v)| \leq L$.
+
+\subsection{Byzantine Fault Tolerance (BFT) Quorum}
+While the consensus mechanism is mathematically formulated according to standard Byzantine Fault Tolerance (BFT) parameters, it is physically implemented via a simulated \texttt{DirectMemoryNetworkTransport} rather than a distributed TCP stack. The quorum size $Q$ necessary to achieve consensus across $N$ nodes is defined as:
+\begin{equation}
+Q = \lfloor \frac{2N}{3} \rfloor + 1
+\end{equation}
+The simulated network maintains tolerance properties provided the count of faulty nodes $f$ adheres to the theoretical constraint $N \geq 3f + 1$.
+
+\section{Evaluation Metrics}
+\subsection{F1 Score}
+The performance of the classification and entity resolution models is quantitatively assessed using the $F_1$ score, representing the harmonic mean of precision ($P$) and recall ($R$):
+\begin{equation}
+P = \frac{TP}{TP + FP}, \quad R = \frac{TP}{TP + FN}
+\end{equation}
+\begin{equation}
+F_1 = 2 \cdot \frac{P \cdot R}{P + R}
+\end{equation}
+where $TP$ represents true positives, $FP$ denotes false positives, and $FN$ signifies false negatives.

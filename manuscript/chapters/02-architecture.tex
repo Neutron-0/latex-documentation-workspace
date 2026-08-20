@@ -1,0 +1,109 @@
+\chapter{Architecture}
+\label{ch:architecture}
+
+\section{Architectural Objectives and Problem Context}
+\label{sec:arch_problem}
+
+Multi-source intelligence systems operate in high-entropy data environments where independent platforms expose incompatible data contracts, inconsistent identifiers, and varying levels of data integrity \cite{newman2021building}. Conventional intelligence architectures frequently encounter two significant bottlenecks: (1) delegating multi-hop graph expansions to relational database engines via recursive Common Table Expressions (CTEs) or unindexed joins causes severe latency spikes and lock contention under heavy write loads \cite{graphs:newman2018}; and (2) integrating distributed cryptographic validation protocols into analytical pipelines often introduces network I/O overhead that impairs interactive analyst querying. 
+
+The Wolverine architecture resolves this tension through a decoupled, multi-tier design: separating raw ingestion from canonicalization, bounding topological graph expansion strictly in memory, and isolating cryptographic audit logging into an independent middleware tier.
+
+\section{System Context and Trust Boundaries}
+\label{sec:system_context}
+
+The Wolverine ecosystem is organized into distinct logical zones, balancing external collection against internal analytical security \cite{sultan2019container, shostack2014threat}:
+
+\begin{itemize}
+    \item \textbf{Demilitarized Zone (DMZ):} The Tor Gateway (\texttt{tor-gateway}), an Nginx reverse proxy enforcing read-only rate limiting ($10\text{ req/s}$) and security header injection (\texttt{X-Synthetic-Research: true}) for external demonstration clients.
+    \item \textbf{Application Zone (\texttt{wolverine-internal}):} Houses the core analytical microservices (\texttt{wolverine-api}), the five synthetic source platforms, MinIO S3 raw capture storage, and Redis Streams message queues.
+    \item \textbf{Ground Truth Zone (\texttt{wolverine-truth}):} A strictly isolated Docker bridge network (\texttt{internal: true}) hosting \texttt{postgres-truth}. It is logically inaccessible to the analytical pipeline, ensuring the entity resolver cannot access true persona identities.
+\end{itemize}
+
+\begin{figure}[htpb]
+\centering
+\begin{tikzpicture}[node distance=1.8cm, auto, thick, scale=0.85, transform shape]
+  \tikzstyle{box} = [rectangle, draw, fill=blue!10, text width=8em, text centered, rounded corners, minimum height=3em]
+  \tikzstyle{db} = [rectangle, draw, fill=green!10, text width=8em, text centered, rounded corners, minimum height=3em]
+  \tikzstyle{zone} = [draw, dashed, inner sep=0.5cm, rounded corners]
+
+  % Nodes
+  \node[box] (tor) {Tor Gateway\\(Nginx Proxy)};
+  \node[box, right of=tor, node distance=4.5cm] (api) {Wolverine API\\(Express Engine)};
+  \node[box, above of=api, node distance=2.2cm] (adapters) {5 Collection Adapters\\(REST/GraphQL/HTML)};
+  \node[db, right of=api, node distance=4.5cm] (wdb) {WolverineDB\\(Merkle / 4-of-5 BFT)};
+  \node[db, below of=api, node distance=2.2cm] (truth) {Truth Vault\\(\texttt{postgres-truth})};
+  \node[box, left of=truth, node distance=4.5cm] (eval) {Evaluator Service\\(Ground Truth Scorer)};
+
+  % Arrows
+  \draw[->] (tor) -- node[above] {\small Public} (api);
+  \draw[->] (adapters) -- node[left] {\small Captures} (api);
+  \draw[->] (api) -- node[above] {\small Audit Log} (wdb);
+  \draw[->] (eval) -- node[above] {\small Audit} (truth);
+  \draw[->] (eval) -- node[right] {\small Validate} (api);
+
+  % Trust Boundaries
+  \node[zone, fit=(tor), label=above:\textbf{DMZ Zone}] (z_dmz) {};
+  \node[zone, fit=(api) (adapters) (wdb), label=above:\textbf{Internal Application Zone}] (z_int) {};
+  \node[zone, fit=(truth) (eval), label=below:\textbf{Truth Vault Zone (Isolated)}] (z_truth) {};
+\end{tikzpicture}
+\caption{System Context and Trust Boundary Topology}
+\label{fig:sys_context}
+\end{figure}
+
+\section{Service Dependencies and Control Flow}
+\label{sec:control_flow}
+
+When an analyst initiates a topological exploration query (e.g., expanding an identity cluster), the control flow executes strictly within application memory:
+
+\begin{figure}[htpb]
+\centering
+\begin{mermaid}
+sequenceDiagram
+    autonumber
+    participant C as Analyst UI / Vzeya
+    participant API as Wolverine API Router
+    participant P as GraphProjector (In-Memory)
+    participant R as EntityResolver
+    participant DB as PostgreSQL (Prisma Store)
+    
+    C->>API: GET /v1/graph/query?startRef=atlas:usr_101&depth=2
+    API->>P: queryGraph("atlas:usr_101", maxDepth=2, limit=100)
+    alt Node exists in In-Memory Map
+        P->>P: Execute Bounded BFS (d <= 4, N <= 500)
+        P-->>API: Return Subgraph (Nodes + Edges)
+    else Node not in memory
+        API->>DB: Query NormalizedRecords / Candidates
+        DB-->>API: Return Canonical Records
+        API->>P: projectRecord() / projectLink()
+        P->>P: Materialize Nodes and Edges in Map
+        P->>P: Execute Bounded BFS
+        P-->>API: Return Projected Subgraph
+    end
+    API-->>C: JSON Response (dataClassification: "synthetic-research")
+    C->>C: Render Node-Link Grid + CSS Scanline Overlay
+\end{mermaid}
+\caption{Analytical Query Execution and In-Memory Traversal Sequence}
+\label{fig:control_flow}
+\end{figure}
+
+\section{Architectural Implementation Highlights}
+\label{sec:arch_impl}
+
+\subsection{In-Memory Graph Traversal over Relational Stores}
+Rather than maintaining an external property graph database (such as Neo4j) or issuing recursive SQL queries, the system instantiates a lightweight in-memory graph index (\texttt{GraphProjector} in \texttt{wolverine/src/graph/projector.ts}). Graph nodes and relationship edges are stored in JavaScript \texttt{Map<string, GraphNode>} and \texttt{Map<string, GraphEdge>} structures. Traversal is executed using a bounded Breadth-First Search (BFS) algorithm that terminates deterministically when depth reaches $\min(4, d_{max})$ or discovered vertices reach $N_{max} = 500$.
+
+\subsection{Linear Decay Consensus Model}
+To model the diminishing relevance of historical observations, similarity scoring incorporates a linear 30-day temporal decay function ($S_{temporal} = \max(0, 1 - \frac{\Delta t}{30\text{ days}})$). Non-linear exponential decay was deliberately rejected to avoid floating-point drift across distributed nodes and maintain consistent heuristic weighting.
+
+\subsection{Decoupled Cryptographic State Middleware}
+The WolverineDB middleware library enforces state auditability by capturing database mutation payloads, normalizing them via RFC~8785 JSON Canonicalization Scheme (JCS), and appending them to an RFC~6962 Merkle tree. Multi-party verification is achieved via 4-of-5 BFT validator attestations operating over \texttt{DirectMemoryNetworkTransport}.
+
+\section{Architectural Limitations}
+\label{sec:arch_limitations}
+
+The primary architectural trade-off lies in the in-process execution model: (1) in-memory graph projection caps the maximum explorative subgraph size to 500 nodes per query; (2) network consensus validation is tested within a single Node.js runtime process rather than an active multi-node cluster; and (3) frontend visualization in Vzeya is decoupled from live backend mutation endpoints.
+
+\section{Research Significance}
+\label{sec:arch_significance}
+
+This architecture demonstrates that high-throughput, low-latency intelligence analysis can be achieved without the operational complexity of distributed graph databases by combining in-memory bounded search, deterministic schema normalization, and modular cryptographic ledger middleware \cite{kleppmann2017designing, cormen2009introduction}.

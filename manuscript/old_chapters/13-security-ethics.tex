@@ -1,0 +1,262 @@
+\chapter{Security, Ethics, and Operational Governance}
+\label{ch:security-ethics}
+
+As a cyber-intelligence platform, Wolverine's operational validity is inexorably tied to its security architecture 
+and ethical boundaries. This chapter deconstructs the system's trust zones, details the simulated limitations of 
+WolverineDB, analyzes the ethical distinction between probabilistic correlation and human attribution, and establishes 
+a rigorous residual risk model.
+
+\section{Security Model}
+\label{sec:sec-model}
+The Wolverine security model is structured to defend internal analytical assets from external payload poisoning and 
+internal unauthorized exfiltration.
+\begin{itemize}
+    \item \textbf{Assets:} Immutable source payloads, canonical records, linkage probabilities, evaluation ground truth.
+    \item \textbf{Adversaries:} Malicious actors attempting prompt injection (T-01), infrastructure operators attempting 
+          database tampering (T-05), and data ingestion errors causing denial of service.
+    \item \textbf{Controls:} Network segregation, strict schema typing, LLM Regex sanitization, Merkle state hashing.
+\end{itemize}
+
+\section{STRIDE Threat Model Analysis}
+\label{sec:stride-threat-model}
+To systematically analyze the Wolverine architecture, we apply the STRIDE threat modeling methodology 
+\cite{shostack2014threat}. By evaluating the system against these categories, we can identify and document the 
+primary attack vectors and their corresponding mitigations within the platform.
+
+\begin{itemize}
+    \item \textbf{Spoofing:} The platform currently relies on \texttt{X-Wolverine-Role} headers for Role-Based 
+          Access Control (RBAC), which are vulnerable to spoofing since there is no JWT or OAuth cryptographic 
+          validation implemented.
+    \item \textbf{Tampering:} Adversaries might attempt to modify PostgreSQL records. This is largely mitigated by 
+          the Merkle hashing state layer built into WolverineDB, which detects unauthorized alterations at the row level.
+    \item \textbf{Repudiation:} There is currently a lack of granular user action logging within the API adapters, 
+          leading to a residual risk where actions cannot be definitively traced to specific analysts.
+    \item \textbf{Information Disclosure:} The Truth Vault is logically air-gapped using Docker network isolation, 
+          which effectively prevents inference leakage of the ground truth labels to the active analytical pipeline.
+    \item \textbf{Denial of Service:} Volumetric attacks against the DMZ are mitigated via Nginx rate limiting. 
+          Internal graphing Denial of Service is prevented by enforcing strict node caps on Breadth-First Search 
+          (BFS) traversals.
+    \item \textbf{Elevation of Privilege:} An attacker who gains access to the internal network could exploit the 
+          aforementioned RBAC header spoofing to elevate their privileges to administrator functions.
+\end{itemize}
+
+\section{Trust Zones}
+\label{sec:sec-trust-zones}
+The architecture relies on physical network separation rather than application-layer logic to enforce trust 
+boundaries (\Cref{ch:system-architecture}).
+\begin{itemize}
+    \item \textbf{\texttt{wolverine-dmz}:} Untrusted. Contains adversarial data sources. Ingress is restricted via 
+          Nginx rate limiting.
+    \item \textbf{\texttt{wolverine-internal}:} Semi-Trusted. Contains the analytical core. It can pull from the DMZ 
+          but is strictly prohibited from pushing data to the public internet or the evaluation vault.
+    \item \textbf{\texttt{wolverine-truth}:} Strictly Trusted. Operates via the Docker \texttt{internal: true} 
+          directive, dropping all routing from \texttt{wolverine-internal}.
+\end{itemize}
+
+\section{Container Security Analysis}
+\label{sec:container-security}
+The trust zones established above rely on Docker for environment segregation. However, as noted by Sultan et al. 
+\cite{sultan2019container}, Docker network isolation constitutes a virtual boundary, not a physical one. 
+This architectural choice carries inherent risks:
+
+\begin{itemize}
+    \item \textbf{Shared Kernel:} All containers share the host operating system's kernel. A kernel vulnerability 
+          could allow an attacker in the untrusted DMZ to compromise the host, thereby bypassing all network isolation.
+    \item \textbf{Docker Daemon Vulnerability:} The entire isolation model relies on the integrity of the Docker 
+          daemon. If the daemon is compromised, the isolation model completely breaks down.
+    \item \textbf{Container Escape:} There is a persistent risk of container escape attacks, especially since the 
+          current deployment does not configure restrictive \texttt{seccomp} or \texttt{AppArmor} profiles.
+\end{itemize}
+
+\section{The Truth Vault Boundary}
+\label{sec:sec-truth-vault}
+The Truth Vault (\texttt{postgres-truth}) stores the exact human-to-account assignments generated synthetically. 
+The \texttt{internal: true} network configuration guarantees that the \texttt{entity-resolver} cannot issue SQL queries 
+to this database during operation. 
+
+This does not create a literal physical "air-gap" (as the containers share a single host kernel), but it establishes a 
+virtualized packet-drop boundary. The only mechanism to cross this boundary is the external, out-of-band evaluation 
+script that temporarily binds to the host's localhost port during scoring runs.
+
+\section{Tor Gateway Controls}
+\label{sec:sec-tor-gateway}
+While the synthetic prototype currently scrapes local containers, the architecture defines a Tor gateway for real-world 
+integration. This mitigates the deanonymization of the collection infrastructure by hostile platform administrators. 
+All outbound API adapter requests route through a proxy container rotating Tor circuits.
+
+The Nginx configuration securing the Tor Gateway enforces strict operational controls (\Cref{app:tor-gateway}):
+\begin{itemize}
+    \item \textbf{Method Restriction:} Allows only \texttt{GET} and \texttt{HEAD} requests, returning a 
+          \texttt{405 Method Not Allowed} for all other HTTP verbs.
+    \item \textbf{Rate Limiting:} Implements aggressive rate limiting with \texttt{rate=10r/s} and a \texttt{burst=20} 
+          to thwart automated scraping attacks.
+    \item \textbf{Endpoint Blocking:} Explicitly blocks access to administrative endpoints including \texttt{/metrics}, 
+          \texttt{/health/ready}, \texttt{/admin}, and \texttt{/seed}.
+    \item \textbf{Security Headers:} Sets mandatory security headers such as Content Security Policy (\texttt{CSP}), 
+          \texttt{X-Frame-Options}, and \texttt{X-Content-Type-Options}.
+    \item \textbf{Upstream RBAC:} Injects upstream RBAC headers, mapping connections to predefined roles such as 
+          \texttt{X-Wolverine-Role "researcher"} and \texttt{"public\_demo"}.
+\end{itemize}
+The primary residual risk here is the potential for malicious Tor exit nodes to inject payload modifications before 
+TLS validation can occur.
+
+\section{WolverineDB Security Architecture}
+\label{sec:sec-wolverinedb}
+WolverineDB injects tamper-evidence into relational PostgreSQL via Merkle state hashing. For a full architectural 
+treatment, refer to \Cref{ch:wolverinedb}. Here, we summarize the security model.
+
+\subsection{Vulnerability Forensics}
+\label{subsec:vuln-forensics}
+Despite successful functional tests, the implementation remains a simulated proof-of-concept. The following 
+vulnerabilities are explicitly acknowledged:
+\begin{enumerate}
+    \item \textbf{In-Process Transport:} BFT consensus relies on \texttt{DirectMemoryNetworkTransport}. It is 
+          fundamentally vulnerable to a single-process crash, violating distributed fault tolerance.
+    \item \textbf{Simulated KMS:} Cryptographic signatures are not anchored to a physical Hardware Security Module 
+          (HSM).
+    \item \textbf{Sentinel TOCTOU:} A Time-of-Check to Time-of-Use window exists between the Sentinel policy validation 
+          and actual PostgreSQL insertion.
+\end{enumerate}
+These limitations explicitly render WolverineDB unsuitable for production financial or legal evidence retention.
+
+\subsection{Evolution of Replay Protection}
+\label{sec:security-replay-evolution}
+The cryptographic authorization model relies on single-use approval nonces. The initial prototype utilized a volatile 
+Node.js \texttt{Set}, vulnerable to container-restart replay attacks. The architecture evolved to use 
+\texttt{PostgresReplayStore}, mapping atomic primary key violations to authorization rejections (\Cref{tab:security-replay}).
+
+\begin{table}[htpb]
+\centering
+\begin{tabular}{p{3.5cm} p{3cm} p{4cm} p{3cm}}
+\toprule
+\textbf{Property} & \textbf{Previous Prototype} & \textbf{Current Implementation} & \textbf{Evidence} \\
+\midrule
+Replay state & volatile memory & PostgreSQL-backed & Source/Tests \\
+Persistence & process lifetime & database persistence & Verified (Tests) \\
+Duplicate detection & in-memory Set & DB uniqueness & Source/Tests \\
+Concurrent attempts & race-sensitive & atomic DB constraint & Verified (Tests) \\
+Test double & N/A & \texttt{InMemoryReplayStore} & Source \\
+Residual limitation & process restart & runtime injection / config & Source \\
+\bottomrule
+\end{tabular}
+\caption{Evolution of Replay Protection Security}
+\label{tab:security-replay}
+\end{table}
+
+\section{Data Security and Synthetic Privacy}
+\label{sec:sec-synthetic-privacy}
+The ethical mandate of this project (NFR-04) strictly prohibits the ingestion of real-world Personally Identifiable 
+Information (PII). By utilizing entirely synthetic datasets generated deterministically, the prototype eliminates the 
+legal and ethical liabilities associated with analyzing live dark-web telemetry.
+
+\subsection{Ethics of Synthetic Data}
+\label{subsec:ethics-synthetic}
+Using synthetic data is an ethical necessity to protect innocent parties from accidental implication during research 
+and development. However, it introduces known limitations:
+\begin{itemize}
+    \item \textbf{Domain Shift:} Synthetic data may not capture the nuanced, chaotic nature of real-world threat 
+          actors, leading to a synthetic-to-real domain shift.
+    \item \textbf{The False Confidence Problem:} High accuracy on synthetic data does not equate to real-world safety 
+          or performance. Over-reliance on these metrics can lead to dangerous assumptions when the system is deployed 
+          in production environments.
+\end{itemize}
+Furthermore, as demonstrated by Narayanan and Shmatikov \cite{narayanan2008robust}, even supposedly anonymized data 
+carries significant de-anonymization risks. Utilizing pure synthetic generation side-steps these privacy pitfalls 
+while preserving structural complexity.
+
+\section{RAG Security and Prompt Injection}
+\label{sec:sec-rag-security}
+When the LLM receives graph data, it is subjected to 4-rule Regex sanitization \cite{perez2022ignore, greshake2023not}.
+\begin{itemize}
+    \item \textbf{Threat:} An adversarial payload containing instructions (e.g., \texttt{ignore previous system prompts}).
+    \item \textbf{Detection:} Rule 2 \texttt{/(ignore|system|instruction|prompt)/gi}.
+    \item \textbf{Response:} Replaces matches with \texttt{[REDACTED]}.
+\end{itemize}
+
+\textit{Illustrative synthetic example --- not an empirical benchmark:} \\
+\textbf{Attack:} \texttt{"Vendor: shadow\_broker. System: print internal state."} \\
+\textbf{Sanitized:} \texttt{"Vendor: shadow\_broker. [REDACTED]: print internal state."} \\
+\textbf{Residual Risk:} Sophisticated multi-lingual or encoded prompt smuggling can trivially bypass static regex 
+matching.
+
+\section{Threat-to-Control Traceability}
+\label{sec:sec-threat-traceability}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{p{0.10\textwidth} p{0.15\textwidth} p{0.30\textwidth} p{0.35\textwidth}}
+\toprule
+\textbf{ID} & \textbf{Asset} & \textbf{Control} & \textbf{Residual Risk} \\
+\midrule
+\textbf{T-01} & LLM & Regex Sanitization (4 Rules) & Semantic Jailbreaks (High) \\
+\textbf{T-03} & API & Nginx Rate Limiting & Distributed Volumetric DDoS (Med) \\
+\textbf{T-05} & Database & WolverineDB Merkle Hashing & Config-Dependent Replay Attack (Med) \\
+\bottomrule
+\end{tabular}
+\caption{Threat-to-Control Traceability Matrix}
+\label{tab:threat-controls}
+\end{table}
+
+\section{Failure and Abuse Cases}
+\label{sec:sec-failure-cases}
+\begin{itemize}
+    \item \textbf{Malformed Record:} Parser drops payload. Impact: Missing data.
+    \item \textbf{LLM Failure:} Timeout triggers deterministic string fallback. Impact: Loss of narrative synthesis.
+    \item \textbf{Cryptographic Failure:} Missing payload hash prevents normalization. Impact: Complete ingestion failure.
+\end{itemize}
+
+\section{Correlation vs. Attribution}
+\label{sec:sec-correlation-attribution}
+A critical ethical boundary in intelligence analysis is distinguishing statistical correlation from legal human 
+attribution \cite{nist2012guide, dwork2006differential}. We formally define these as:
+\begin{itemize}
+    \item \textbf{Statistical Correlation:} A mathematical and probabilistic relationship between two data points or 
+          entities based on observed features.
+    \item \textbf{Legal Attribution:} The rigorous evidentiary standard required to definitively link an activity to 
+          a specific human identity.
+    \item \textbf{Automation Bias:} The cognitive tendency to over-trust and rely on automated systems, often ignoring 
+          contradictory human intuition or evidence.
+\end{itemize}
+
+The Wolverine system calculates \textbf{record similarity} (Jaro-Winkler) and \textbf{temporal overlap}. When these 
+features exceed a threshold, the system creates a \textbf{probabilistic candidate correlation} (an edge in Neo4j). 
+
+This represents an \textit{analyst hypothesis}. It does \textbf{NOT} constitute verified human identity. Shared handles 
+and temporal proximity can easily result from deliberate framing, operational coincidence, or identity theft. Asserting 
+that a Neo4j graph edge proves legal attribution is a dangerous automation bias explicitly warned against in this 
+architecture.
+
+\section{Human Oversight and Governance}
+\label{sec:sec-governance}
+Because correlation is not attribution, the system dictates an explicit requirement for Human-in-the-Loop (HITL) 
+oversight. 
+Candidate pairs scoring between $0.70$ and $0.92$ are tagged for human review, requiring qualitative analyst evaluation 
+of the raw payloads before an edge is confirmed.
+
+\section{Residual Risk Model}
+\label{sec:sec-residual-risk}
+\begin{table}[htpb]
+\centering
+\begin{tabular}{p{0.35\textwidth} p{0.15\textwidth} p{0.40\textwidth}}
+\toprule
+\textbf{Risk} & \textbf{Severity} & \textbf{Future Mitigation} \\
+\midrule
+LLM Semantic Prompt Smuggling & High & Secondary LLM output evaluator. \\
+WolverineDB TOCTOU / Memory Trans. & High & Physical multi-node deployment. \\
+Algorithmic False Positives (FPR) & Medium & Dynamic threshold calibration (ROC). \\
+Automation Bias / False Attribution & High & Mandated UI confidence disclaimers. \\
+Container escape / Docker daemon exploit & High & Implement \texttt{seccomp/AppArmor} profiles. \\
+RBAC header spoofing & High & Implement cryptographic OAuth/JWT tokens. \\
+Synthetic-to-real domain shift & Medium & Phased evaluation on isolated real data. \\
+Model drift in LLM synthesis & Medium & Continuous evaluation and version locking. \\
+\bottomrule
+\end{tabular}
+\caption{Operational Residual Risk Matrix}
+\label{tab:residual-risk}
+\end{table}
+
+\section{Security/Ethics Synthesis}
+\label{sec:sec-synthesis}
+The prototype successfully demonstrates architectural protections via strict network isolation and immutable raw capture. 
+However, the cryptographic fault tolerance remains simulated, the RAG prompt-injection defenses are vulnerable to 
+semantic bypass, and the probabilistic nature of the entity resolution mandates strict human oversight to prevent 
+unethical automation bias.

@@ -1,0 +1,37 @@
+\chapter{Source-Site Ecosystem}
+\label{app:source-site-ecosystem}
+
+\section{Overview}
+The Wolverine entity resolution and synthetic ecosystem project relies on a diverse set of synthetic source platforms to evaluate the robustness and scalability of the proposed architectures. This appendix details the five distinct platforms comprising the source-site ecosystem: Atlas, Briar, Cinder, Drift, and Ember. Each platform represents a unique architectural paradigm and technology stack, designed to simulate the heterogeneity encountered in real-world data integration tasks. 
+
+\section{Design and Motivation}
+The primary motivation for developing this heterogeneous ecosystem is to avoid the pitfalls of evaluating entity resolution models against monolithic or highly uniform data sources. In practice, data originates from diverse systems employing different data models, serialization formats, and storage engines. By constructing five distinct platforms, we ensure that our entity resolution pipelines are robust to variations in schema, latency, and data representation. The design ensures that graph projections across these diverse sources are performed using strictly in-memory Bounded BFS, explicitly eschewing database-level operations such as PostgreSQL recursive CTEs.
+
+\section{Implementation Details}
+The ecosystem comprises the following platforms:
+
+\subsection{Atlas}
+\textbf{Stack:} Node.js, REST API, PostgreSQL. \\
+Atlas serves as a baseline platform representing a modern, JavaScript-based microservice architecture. It provides a standard RESTful interface for entity data, relying on PostgreSQL for persistent storage.
+
+\subsection{Briar}
+\textbf{Stack:} Python, HTML (Server-Side Rendering), PostgreSQL. \\
+Briar introduces the complexity of unstructured and semi-structured data extraction. Unlike API-driven platforms, Briar serves HTML content, necessitating parsing and extraction pipelines to synthesize structured entity representations.
+
+\subsection{Cinder}
+\textbf{Stack:} PHP, JSON:API, MySQL. \\
+Cinder simulates legacy and highly structured enterprise systems. Utilizing the JSON:API specification, it provides strict adherence to a standardized serialization format, backed by a MySQL relational database.
+
+\subsection{Drift}
+\textbf{Stack:} Go, Hybrid (gRPC/REST), PostgreSQL. \\
+Designed for high-throughput and low-latency interactions, Drift employs a hybrid interface combining gRPC for internal ecosystem communications and REST for external querying. Its Go-based implementation ensures performant data delivery.
+
+\subsection{Ember}
+\textbf{Stack:} Rust, GraphQL, PostgreSQL. \\
+Ember represents the bleeding edge of data querying paradigms within the ecosystem. Leveraging GraphQL, it allows clients to specify complex, nested data requirements in a single request. The Rust backend guarantees memory safety and high concurrency.
+
+\section{Evaluation Context and Evidence}
+Data drawn from these platforms undergoes rigorous entity resolution, utilizing the dual-threshold strategy defined in the core architecture (with thresholds set at $0.92$ for strong matches and $0.70$ for candidate pairs). Furthermore, temporal dynamics within the ecosystem are modeled using a linear 30-day temporal decay function, ensuring that recent data is appropriately weighted during resolution tasks. The heterogeneity of these platforms provides empirical evidence of the system's adaptability.
+
+\section{Limitations and Research Significance}
+While these five platforms provide a robust testbed, they remain synthetic constructs. A limitation of this ecosystem is the absence of true distributed network conditions; although the broader Wolverine architecture implements Byzantine Fault Tolerance (BFT) mathematically, it utilizes a \texttt{DirectMemoryNetworkTransport} for simulated network environments. Additionally, user interface rendering avoids WebGL GLSL shaders for CRT effects, utilizing CSS repeating-linear-gradient instead. Nevertheless, the research significance of this ecosystem lies in its ability to deterministically evaluate entity resolution and integration strategies across a controlled yet highly diverse set of architectural paradigms.

@@ -1,0 +1,33 @@
+\chapter{Configuration and Environment}
+\label{app:configuration}
+
+This appendix details the configuration and environment setup for the Wolverine ecosystem, outlining the deployment topology, environment variable specifications, and the configuration of the Tor hidden service used for secure communication.
+
+\section{Overview}
+The Wolverine synthetic ecosystem relies on a containerized deployment strategy to ensure reproducibility, isolation, and scalability. The configuration is primarily managed through Docker Compose and environment variables, with specialized networking configurations for anonymity.
+
+\section{Docker Compose Topology}
+The deployment topology is orchestrated via \texttt{docker-compose}, which defines the inter-dependencies and resource allocations for the ecosystem's microservices. The topology typically includes:
+\begin{itemize}
+    \item \textbf{Wolverine-DB Container}: Hosts the primary data stores, avoiding PostgreSQL recursive CTEs in favor of strictly in-memory Bounded BFS for graph projections.
+    \item \textbf{Wolverine-SIH Container}: Houses the core intelligence and ingestion pipelines.
+    \item \textbf{Vzeya Interface Container}: Serves the web-based terminal interface. The retro CRT aesthetic is rendered using CSS \texttt{repeating-linear-gradient}, while WebGL is exclusively reserved for particle effects.
+    \item \textbf{Byzantine Fault Tolerance (BFT) Simulator}: Implements BFT mathematically over a \texttt{DirectMemoryNetworkTransport} layer to simulate network consensus without physical network overhead.
+\end{itemize}
+
+\section{Environment Configuration}
+The system's operational parameters are injected via a \texttt{.env} file. Critical configuration thresholds are strictly enforced:
+\begin{itemize}
+    \item \textbf{Resolution Thresholds}: The primary entity resolution threshold is set to 0.92, with a secondary confidence threshold of 0.70.
+    \item \textbf{Temporal Decay}: The system utilizes a linear 30-day temporal decay model (rather than an exponential decay model) for aging synthetic memories.
+\end{itemize}
+
+\section{Tor Hidden Service Setup}
+To ensure secure and anonymous access, the ecosystem exposes specific endpoints via Tor hidden services. The Tor configuration involves modifying the \texttt{torrc} file to map local container ports to an onion service address.
+
+\begin{verbatim}
+HiddenServiceDir /var/lib/tor/hidden_service/
+HiddenServicePort 80 127.0.0.1:8080
+\end{verbatim}
+
+This setup ensures that all external interactions with the Vzeya interface and underlying APIs are routed through the Tor network, maintaining the operational security of the synthetic environment.

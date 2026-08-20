@@ -1,0 +1,40 @@
+sequenceDiagram
+    participant Gen as Synthetic Generator
+    participant Sites as Source Sites (DMZ)
+    participant API as wolverine-api
+    participant MinIO as MinIO (Raw Store)
+    participant PG as postgres-wdb
+    participant Redis as Redis (Pub/Sub)
+    participant ER as entity-resolver
+    participant GP as graph-projector
+    participant Neo as Neo4j
+    participant Ollama as Ollama (LLM)
+    participant UI as Analyst UI
+
+    Gen->>Sites: Seed synthetic data (50K personas)
+    API->>Sites: GET /api/... (collect payloads)
+    API->>MinIO: Store raw bytes (immutable)
+    API->>API: Parse → CanonicalRecord
+    API->>PG: INSERT canonical record
+    API->>Redis: Publish RecordNormalizedEvent
+    Redis->>ER: Consume event
+    ER->>PG: Fetch candidates (blocking keys)
+    ER->>ER: Compute Jaro-Winkler scores
+    ER->>PG: INSERT ResolutionCandidate
+    Redis->>GP: Consume linkage event  
+    GP->>PG: Fetch linked pairs
+    GP->>GP: Build adjacency map
+    GP->>Neo: Upsert GraphNode/GraphEdge
+    UI->>API: GET /v1/graph/query
+    API->>Neo: BFS traversal
+    Neo-->>API: Subgraph
+    API-->>UI: JSON response
+    UI->>API: POST /v1/analysis/questions
+    API->>API: Sanitize context (4 rules)
+    API->>Ollama: POST /api/generate
+    alt LLM responds
+        Ollama-->>API: Generated narrative
+    else LLM timeout (>5s)
+        API->>API: Deterministic fallback
+    end
+    API-->>UI: Narrative response

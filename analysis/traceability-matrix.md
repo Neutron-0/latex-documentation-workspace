@@ -18,3 +18,11 @@ This matrix maps Manuscript chapters and sections to Technical Claims, Evidence 
 | 11. UI | 11.3 Mocking | Live intelligence UI | Vzeya UI code | MOCK/SIMULATED | Fig: UI Mockup | Mock data arrays code |
 | 12. Security | 12.1 Docker | Air-gapped Truth Vault | `docker-compose...` | IMPLEMENTED | Fig: Net Topo | Compose network config |
 | 13. Evaluation | 13.3 Metrics | 0.9280 precision resolution | Evaluator code | CLAIMED/MOCK | Table: Metrics | Evaluator hardcoded outputs |
+
+## P0: Replay Protection Updates
+- **P0 Requirement:** Harden Node.js volatile replay cache.
+- **Threat:** Replaying unexpired approval envelopes after container restart.
+- **Mechanism:** ReplayProtectionStore -> PostgresReplayStore -> wolverine_sys.approval_nonces atomic uniqueness constraint.
+- **Test Evidence:** Verified in 	ests/postgres_integration.test.ts (rejected replays).
+- **Runtime Evidence:** Defaults to InMemoryReplayStore in CLI scripts (Configuration-Dependent path).
+- **Manuscript Trace:** Ch 6 (DB Schema), Ch 8 (Implementation), Ch 11 (Security Residual Risk), Ch 12 (Discussion), Appendix C (Specs).

@@ -1,0 +1,77 @@
+\chapter{Selected Source Code Excerpts}
+\label{app:source-excerpts}
+
+This appendix provides selected pseudocode excerpts to illustrate the foundational algorithms driving Wolverine's ingestion, matching, and traversal logic. 
+
+\section{Blocking Key Generation}
+This snippet demonstrates the generation of coarse blocking keys for partition-based filtering prior to extensive identity resolution.
+\begin{lstlisting}[language=JavaScript]
+function generateBlockingKeys(record: NormalizedRecord): string[] {
+  const handle = normalizeHandle(record.handle);
+  const prefix = handle.substring(0, 3);
+  const week = getRegistrationWeek(record.joinedAt);
+  const site = `${record.sourceId}.example.test`;
+  return [`${prefix}:${week}`, `${prefix}:${site}`];
+}
+\end{lstlisting}
+\textit{Note: These are representative pseudocode excerpts derived from the source implementation, simplified for exposition.}
+
+\section{Jaro-Winkler Similarity}
+This snippet outlines the core function signature and algorithmic weight application for measuring text proximity.
+\begin{lstlisting}[language=JavaScript]
+function jaroWinkler(s1: string, s2: string): number {
+  const jaro = jaroDistance(s1, s2);
+  const prefixLen = commonPrefixLength(s1, s2, 4);
+  return jaro + (prefixLen * 0.1 * (1 - jaro));
+}
+\end{lstlisting}
+\textit{Note: These are representative pseudocode excerpts derived from the source implementation, simplified for exposition.}
+
+\section{Composite Score Calculation}
+This snippet illustrates the weighted feature combination mechanism that generates an overall composite confidence score between two candidate records.
+\begin{lstlisting}[language=JavaScript]
+const score =
+  0.30 * jaroWinkler(a.handle, b.handle) +
+  0.15 * jaroWinkler(a.displayName, b.displayName) +
+  0.20 * temporalProximity(a.joinedAt, b.joinedAt) +
+  0.15 * 0.5 + // activityOverlap: hardcoded baseline
+  0.20 * crossSiteCue(a.handle, b.handle);
+\end{lstlisting}
+\textit{Note: These are representative pseudocode excerpts derived from the source implementation, simplified for exposition.}
+
+\section{RAG Sanitization}
+This 4-rule pipeline demonstrates how raw scraped text is cleansed of control characters and command-injection vectors prior to processing.
+\begin{lstlisting}[language=JavaScript]
+function sanitizeText(text: string): string {
+  text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  text = text.substring(0, 500);
+  text = text.replace(
+    /ignore previous|system:|<\||\[INST\]/gi, '[REDACTED]'
+  );
+  return text;
+}
+\end{lstlisting}
+\textit{Note: These are representative pseudocode excerpts derived from the source implementation, simplified for exposition.}
+
+\section{BFS Traversal}
+This snippet details the bounded breadth-first search implementation used to rapidly explore node neighborhoods within the multi-tenant knowledge graph.
+\begin{lstlisting}[language=JavaScript]
+async function queryGraph(
+  startRef: string, maxDepth = 2, limit = 100
+): Promise<Subgraph> {
+  const visited = new Set<string>();
+  const queue: Array<[string, number]> = [[startRef, 0]];
+  while (queue.length > 0) {
+    const [nodeId, depth] = queue.shift()!;
+    if (depth > maxDepth || visited.size >= limit) break;
+    if (visited.has(nodeId)) continue;
+    visited.add(nodeId);
+    const neighbors = await getNeighbors(nodeId);
+    for (const n of neighbors) {
+      if (!visited.has(n.id)) queue.push([n.id, depth + 1]);
+    }
+  }
+  return buildSubgraph(visited);
+}
+\end{lstlisting}
+\textit{Note: These are representative pseudocode excerpts derived from the source implementation, simplified for exposition.}

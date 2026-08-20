@@ -3,7 +3,7 @@
   "projectDir": "manuscript",
   "rootFile": "main.tex",
   "compiler": "tectonic",
-  "autoBuild": false,
+  "autoBuild": true,
   "synctex": true,
   "buildDir": ".build"
 }

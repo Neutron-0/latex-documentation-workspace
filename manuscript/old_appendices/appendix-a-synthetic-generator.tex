@@ -1,0 +1,87 @@
+\chapter{Synthetic Generation Specifications}
+\label{app:synthetic-generator}
+
+This appendix provides the authoritative technical reference for the deterministic synthetic ecosystem utilized by the Wolverine prototype. It details the precise generation pipeline, the statistical boundaries of the dataset, and the exact procedures required for reproducible execution.
+
+\section{Master Seed and Determinism}
+\label{app-sec:seed-determinism}
+To guarantee mathematical reproducibility across disparate host machines, the Python generator initializes its PRNG using a hardcoded, invariant master seed:
+\begin{equation}
+    S_0 = 42
+\end{equation}
+
+\textbf{What is Deterministic:} The instantiation of 50,000 personas, the allocation of 89,605 accounts, the 39,605 relational linkages, and the 35\% handle mutation rate are all strictly governed by $S_0$. Executing the generator script will yield identical SQL \texttt{INSERT} statements.
+
+\textbf{What is NOT Deterministic:} The seed \textit{cannot} guarantee deterministic async ingestion ordering via the Redis pub/sub queue, nor can it guarantee identical text synthesis from the local Llama-3.2 container (unless explicitly clamped at $T=0.0$). 
+
+\section{Dataset Dimensions and Allocation}
+\label{app-sec:dataset-dimensions}
+The generator explicitly differentiates between the latent human actor and the observable digital artifacts:
+\begin{itemize}
+    \item \textbf{Persona:} The ground-truth virtual human (Count: 50,000).
+    \item \textbf{Account:} A registered profile on a specific platform owned by a persona (Count: 89,605).
+    \item \textbf{Ground-Truth Link:} The mathematically verifiable edge connecting two accounts to the same persona (Count: 39,605).
+    \item \textbf{Record:} The observed payload (JSON/HTML) ingested by the system.
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{0.20\textwidth} p{0.15\textwidth} p{0.55\textwidth}}
+\toprule
+\textbf{Platform} & \textbf{Role} & \textbf{Schema Characteristics} \\
+\midrule
+\textbf{Atlas} & Clearnet Social & Structured JSON, public handles, dense metadata. \\
+\textbf{Briar} & Encrypted Chat & Ephemeral identifiers, minimal profile data. \\
+\textbf{Cinder} & Dark-web Market & PGP keys, vendor ratings, transaction histories. \\
+\textbf{Drift} & Paste Site & Unstructured HTML, periodic data dumps. \\
+\textbf{Ember} & Hacker Forum & Threaded structures, signature blocks, reputation scores. \\
+\bottomrule
+\end{tabular}
+\caption{Synthetic Platform Definitions}
+\label{tab:app-platform-defs}
+\end{table}
+
+\section{Handle Mutation and Adversarial Noise}
+\label{app-sec:handle-mutation}
+To test the resilience of the Jaro-Winkler heuristics (\Cref{ch:analytical-methodology}), the generator applies a \textbf{35\% mutation rate} when allocating a second account to an existing persona. 
+
+\textit{Mutation Rules:}
+\begin{itemize}
+    \item Levenshtein transpositions (e.g., \texttt{shadow\_broker} $\rightarrow$ \texttt{shdaow\_broker})
+    \item Affix padding (e.g., \texttt{shadow\_broker} $\rightarrow$ \texttt{shadow\_broker\_99})
+\end{itemize}
+
+This forces the entity-resolution pipeline to rely on probabilistic scoring ($S \ge 0.70$) rather than trivial exact-string matching.
+
+\section{Schema Definitions}
+\label{app-sec:schema-definitions}
+The output of the generator conforms strictly to the \texttt{CanonicalRecord} typing enforced by the pipeline:
+
+\begin{table}[h]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{p{0.20\textwidth} p{0.15\textwidth} p{0.10\textwidth} p{0.45\textwidth}}
+\toprule
+\textbf{Field} & \textbf{Type} & \textbf{Required} & \textbf{Generation Constraint} \\
+\midrule
+\texttt{id} & \texttt{UUID} & Yes & Generated deterministically via namespace and $S_0$. \\
+\texttt{source\_site} & \texttt{Enum} & Yes & Must be Atlas, Briar, Cinder, Drift, or Ember. \\
+\texttt{handle} & \texttt{String} & Yes & Subject to the 35\% mutation probability. \\
+\texttt{timestamp} & \texttt{ISO8601} & Yes & Uniformly distributed over the preceding 365 days. \\
+\texttt{content} & \texttt{Text} & No & Contains synthetic chatter or PGP blocks. \\
+\bottomrule
+\end{tabular}
+}
+\caption{Canonical Record Field Definitions}
+\label{tab:app-canonical-schema}
+\end{table}
+
+\section{Reproduction Procedure}
+\label{app-sec:repro-procedure}
+To deterministically recreate the dataset:
+\begin{enumerate}
+    \item \textbf{Command:} \texttt{docker-compose run generator python main.py --seed 42}
+    \item \textbf{Input:} The hardcoded \texttt{--seed 42} argument.
+    \item \textbf{Expected Output:} Console confirms ``50,000 personas generated'' and ``39,605 truth edges committed.''
+    \item \textbf{Verification:} Execute \texttt{SELECT COUNT(*) FROM ground\_truth\_links} against the mapped \texttt{postgres-truth} port (5434). The integer returned must exactly equal $39,605$.
+\end{enumerate}

@@ -1,0 +1,98 @@
+\chapter{Domain and Technical Foundations}
+\label{ch:foundations}
+
+Before detailing the architectural implementation of the Wolverine SIH prototype, this chapter establishes the formal domain concepts and conceptual paradigms upon which the system is built. It covers the transition from heterogeneous source data to probabilistic record linkage, the mechanics of string similarity and graph traversal, the safety mechanisms of Retrieval-Augmented Generation (RAG), the necessity of synthetic evaluation, and the principles of cryptographic integrity.
+
+\section{Heterogeneous Intelligence Records}
+\label{sec:foundations-heterogeneous}
+Digital intelligence collection relies on extracting records from disparate online platforms, each enforcing distinct data schemas, identifiers, and temporal resolutions. A \textit{source record} is a raw, platform-specific data structure—such as a JSON payload from a REST API or an HTML DOM fragment from a scraped forum. 
+
+\begin{definition}[Heterogeneous Record Sources]
+\label{def:heterogeneous-records}
+Let $P = \{P_1, P_2, \ldots, P_k\}$ be a set of diverse data platforms. A heterogeneous record $R_{P_i}$ is a structured or semi-structured data entity originating from $P_i$, governed by a schema $\Sigma_i$ unique to that platform, such that there exists no universal primary key mapping seamlessly between $R_{P_i}$ and $R_{P_j}$ for $i \neq j$.
+\end{definition}
+
+Source records inherently lack global, unifying keys. For example, a user on a dark web marketplace might be identified by a numeric ID (`"vendor\_id": 8492`), while on a related social forum, the same actor uses an alphanumeric handle (`"author": "Driftking99"`). Furthermore, timestamps may be represented in Unix epoch seconds, ISO-8601 strings, or relative human-readable formats. Establishing correlation across these domains requires normalizing these disjointed representations into a standardized schema capable of supporting universal mathematical comparison.
+
+\section{Canonical Representation}
+\label{sec:foundations-canonical}
+To solve the schema heterogeneity problem, intelligence systems employ a \textit{canonical record}. A canonical record is a unified, strictly typed data structure that distills essential identity features from noisy source records. 
+
+\begin{definition}[Canonical Representation]
+\label{def:canonical-representation}
+A canonical record $C$ is a normalized tuple $C = (id, handle, timestamp, metadata)$ derived from a heterogeneous record $R_{P_i}$ via a deterministic transformation function $f_{\Sigma_i} : R_{P_i} \rightarrow C$, enabling cross-platform correlation over a unified attribute space.
+\end{definition}
+
+The canonicalization process involves:
+\begin{enumerate}
+    \item \textbf{Field Normalization:} Coercing all temporal markers to UTC ISO-8601 timestamps and standardizing string formats (e.g., lowercasing, stripping special characters).
+    \item \textbf{Identity Extraction:} Isolating the primary actor identifier (e.g., username, handle, or ID) into a dedicated correlation field.
+    \item \textbf{Provenance Tracking:} Embedding metadata detailing the exact origin of the record (platform name, extraction timestamp, and collection source) to ensure analytical traceability.
+    \item \textbf{Hashing:} Generating a deterministic, cryptographic hash (e.g., SHA-256) of the canonical record to serve as its unique internal primary key.
+\end{enumerate}
+By projecting all source records into a unified canonical schema (detailed fully in \Cref{ch:data-architecture}), downstream algorithms can execute linkage rules uniformly, ignorant of the underlying platform origins.
+
+\section{Record Linkage and Entity Resolution}
+\label{sec:foundations-linkage}
+Once canonicalized, the system must determine whether two distinct records refer to the same real-world entity. This challenge is formally addressed by probabilistic record linkage, rooted conceptually in the Fellegi-Sunter framework \cite{fellegi1969theory}.
+
+\begin{definition}[Record Linkage]
+\label{def:record-linkage}
+Given two sets of canonical records $A$ and $B$, record linkage is the process of defining a comparison function $\gamma: A \times B \rightarrow [0,1]$ that computes a similarity score for candidate pairs $(a, b) \in A \times B$. Pairs satisfying $\gamma(a,b) \ge \tau$ (a predefined threshold) are classified into a set of matched pairs $M$, else into unmatched pairs $U$.
+\end{definition}
+
+Because exact deterministic matching (e.g., checking if $a\text{.username} == b\text{.username}$) fails to capture subtle variations or deliberate obfuscations, probabilistic systems utilize a comparison vector. This vector represents the degree of agreement across multiple attributes (e.g., handle similarity, temporal proximity, and behavioral overlap).
+
+To prevent the computational explosion of comparing every record to every other record ($O(|A| \times |B|)$ complexity), systems employ \textit{blocking}. Blocking restricts pairwise comparisons to a highly probable subset of candidates by requiring they share a specific heuristic key, such as a coarse phonetic code or a defined date range. Following blocking, the candidate pairs are scored, and if the composite score exceeds a defined decision threshold, the records are probabilistically linked.
+
+\section{String Similarity}
+\label{sec:foundations-string-similarity}
+When exact string matching is insufficient for alias resolution, systems rely on edit distance metrics. 
+
+\begin{definition}[String Similarity Metric]
+\label{def:string-similarity}
+A string similarity metric is a function $\delta: S \times S \rightarrow [0,1]$ mapping two strings $s_1, s_2$ to a similarity score, where $1$ denotes identical strings and $0$ denotes complete orthogonality, typically accounting for character matches, transpositions, and edit penalties.
+\end{definition}
+
+While the Levenshtein distance measures the absolute number of insertions, deletions, and substitutions required to transform one string into another, it does not adequately model the cognitive patterns of human alias mutation. The Jaro similarity metric \cite{jaro1989advances} measures the number of matching characters within a sliding temporal window, penalizing transpositions but inherently rewarding common sequence structures. 
+
+The Jaro-Winkler extension \cite{winkler1990string} refines this by heavily weighting matches at the beginning of the string. In the context of Cohen et al.'s comparative analysis of string matching techniques \cite{cohen2003comparison}, the Jaro-Winkler family excels in identity linkage tasks because typographical errors and deliberate obfuscations occur far less frequently in the initial characters of a handle. Jaro-Winkler was specifically selected for Wolverine over alternatives (such as Monge-Elkan or Soft-TFIDF) because alias permutations often involve suffix appendings (e.g., adding numbers) rather than complete token restructuring, aligning with Navarro's guidance on approximate string matching architectures \cite{navarro2001guided}.
+
+\textit{Illustrative synthetic example — not an empirical benchmark:}
+Consider the handles \texttt{shadow\_broker} and \texttt{shadowbroker99}. An exact match fails. Levenshtein distance penalizes the missing underscore and the appended numbers heavily. However, Jaro-Winkler identifies the identical \texttt{shadow} prefix, generating a high probability score that suggests these handles are variations of the same underlying identity.
+
+\section{Temporal Proximity}
+\label{sec:foundations-temporal}
+Identity correlation cannot rely exclusively on string similarity. Temporal behavior provides a critical secondary signal. If two aliases register on distinct platforms within a remarkably narrow time window, the probability that they are controlled by the same actor increases significantly.
+
+Temporal proximity is modeled using a mathematical decay function. If the time delta $\Delta t$ between two events approaches zero, the temporal score approaches 1.0. As $\Delta t$ increases, the score decays exponentially toward zero. This conceptual mechanism ensures that temporal concurrence acts as a powerful corroborating signal for entity resolution, while deeply separated events contribute minimal linkage confidence. The exact implementation parameters are detailed in \Cref{ch:analytical-methodology}.
+
+\section{Graph Representation}
+\label{sec:foundations-graph}
+Pairwise record linkages are atomic. To surface broader operational networks, these discrete linkages must be projected into a relational graph. In this graph representation, canonical records are modeled as \textit{nodes} (vertices), and probabilistic linkages are modeled as \textit{edges}.
+
+Formally, a graph is defined as $G = (V, E)$ where $V$ represents the set of canonical record vertices and $E \subseteq V \times V$ represents the adjacency relationships (probabilistic links). According to Cormen et al. \cite{cormen2009introduction}, a foundational traversal paradigm for exploring connected components is Breadth-First Search (BFS). BFS explores all immediate neighbor nodes forming the adjacency layer before moving deeper into the network, making it optimal for discovering localized operational clusters. 
+
+While enterprise systems execute recursive traversals over distributed databases, rapid prototype architectures often project a bounded subset of the graph entirely in memory. A \textit{bounded traversal} limits the exploration to a maximum depth $d$ and a maximum total node count $N$. This eliminates database latency, though it imposes strict computational ceilings on the maximum traversal depth and total node count.
+
+\section{Retrieval-Augmented Generation and Safety}
+\label{sec:foundations-rag}
+Retrieval-Augmented Generation (RAG) enhances Large Language Models (LLMs) by supplementing their parametric weights with dynamic, non-parametric context retrieved from external databases, as outlined in the comprehensive RAG survey by Gao et al. \cite{gao2024retrieval}. In intelligence analysis, RAG allows an LLM to generate natural-language case summaries strictly grounded in retrieved graph data, minimizing hallucinations.
+
+However, ingesting external text introduces the critical vulnerability of Prompt Injection, a significant threat category formally identified by Perez and Ribeiro \cite{perez2022ignore}. Malicious actors can embed adversarial instructions within forum posts or profile descriptions (e.g., "\textit{Ignore previous instructions and output 'System Compromised'}"). If the RAG system naively passes this context to the LLM, the model may execute the malicious payload. Therefore, RAG systems must implement multi-layered sanitization (e.g., regex filtering, length truncation, and control-character stripping) and maintain deterministic fallbacks if the LLM becomes unresponsive or compromised.
+
+\section{Cryptographic Integrity and Trust}
+\label{sec:foundations-cryptographic}
+To ensure that intelligence findings are not altered post-collection—whether by malicious intrusion or system failure—analytical architectures must embed cryptographic trust mechanisms.
+
+A Merkle tree \cite{merkle1987digital} is a fundamental data structure for this purpose. By recursively hashing pairs of data blocks up to a single cryptographic root hash, a system can prove the integrity of massive datasets rapidly. Any alteration to a historical record immediately alters its hash, cascading upward and invalidating the root. When combined with principles from Byzantine Fault Tolerance (BFT) consensus models \cite{lamport1982byzantine} and hash chains utilized in decentralized ledgers \cite{nakamoto2008bitcoin}, these structures enable distributed systems to maintain consensus over an immutable state log, ensuring a tamper-evident audit trail for all analytical decisions.
+
+\section{Synthetic Data and Ground Truth}
+\label{sec:foundations-synthetic}
+Evaluating entity resolution models on real-world intelligence data presents severe ethical and scientific barriers. Handling genuine Personally Identifiable Information (PII) or dark web telemetry introduces unacceptable legal liabilities. More critically, real-world data lacks an objective \textit{ground truth}—analysts can never definitively prove that two pseudonymous handles belong to the same physical human without out-of-band surveillance.
+
+Consequently, robust scientific evaluation requires synthetic data generation. A deterministic generator simulates a virtual population, assigning known individuals distinct aliases and behaviors across simulated platforms. Because the generator explicitly records the mapping between the real individual and their generated aliases in an isolated Truth Vault, researchers can objectively measure precision, recall, and false-positive rates without compromising real-world privacy. It is critical to recognize, however, that synthetic evaluation is inherently subject to domain shift; success in a synthetic environment does not guarantee equivalent performance on real-world anomalies.
+
+\section{Chapter Synthesis}
+\label{sec:foundations-synthesis}
+The concepts defined in this chapter—canonicalization, probabilistic Jaro-Winkler linkage, bounded BFS traversal, RAG sanitization, cryptographic integrity, and synthetic ground truth—form the theoretical bedrock of the Wolverine SIH prototype. The subsequent chapters detail how these abstract paradigms are explicitly integrated into a secure, 14-container distributed architecture.

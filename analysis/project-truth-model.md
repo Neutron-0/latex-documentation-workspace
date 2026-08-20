@@ -85,3 +85,10 @@ Data is generated synthetically, stored in app-specific databases. Wolverine pul
 | Sites | Production-like |
 | Pipeline | Production-like |
 | Generator | Experimental harness |
+
+## 9. Security & Replay Protection State
+- **Previous Vulnerability:** Node.js volatile Set allowed signature replay after container restarts.
+- **Current Mechanism:** ReplayProtectionStore interface abstracting nonce consumption.
+- **Durable Implementation:** PostgresReplayStore leverages INSERT INTO wolverine_sys.approval_nonces with atomic duplicate key violations (23505) mapping to REPLAYED_APPROVAL_NONCE.
+- **Compatibility & Runtime Profile:** The module layer correctly supports Postgres persistence. However, CLI and default entrypoints still default to InMemoryReplayStore due to lack of explicit dependency injection. The durable store is therefore configuration-dependent rather than universally activated at runtime.
+- **Verification:** Unit tests confirm memory store works; postgres_integration.test.ts confirms Postgres store works.

@@ -1,0 +1,99 @@
+\chapter{WDB Specification Mapping}
+\label{app:wdb-specifications}
+
+\section{Problem and Motivation}
+
+In developing the WolverineDB cryptographic trust layer, the primary problem encountered was maintaining a rigorous, mathematically sound blueprint for a distributed ledger capable of mitigating state-level collusion and Byzantine failures. The core motivation behind the WDB specification series (\texttt{WDB-0001} through \texttt{WDB-0135}) was to provide a normative, versioned documentation framework that formally maps theoretical security constructs to actionable engineering implementations. By codifying these behaviors into 91 normative specifications, the ecosystem ensures that cryptographic provenance, network safety semantics, and failure boundaries are strictly maintained throughout the database lifecycle.
+
+\section{Design: The Specification Families}
+
+The WolverineDB architecture is categorized into distinct specification families, each addressing a specific layer of the trust network, cryptographic primitives, or operational semantics.
+
+\subsection{Core Cryptographic Foundations (WDB-000x)}
+This family defines the structural primitives of the trust layer, explicitly covering hashing techniques, structural formats, and Merkle tree designs.
+\begin{itemize}
+    \item \textbf{WDB-0001-protocol:} The overarching WolverineDB trust protocol.
+    \item \textbf{WDB-0002-binary-format:} Canonical serialization formats.
+    \item \textbf{WDB-0003-hash-chain:} SHA-256 chain construction.
+    \item \textbf{WDB-0004-merkle-tree:} RFC 6962 compliant Merkle tree structures.
+    \item \textbf{WDB-0005-versioning:} Schema and protocol version evolution.
+    \item \textbf{WDB-0006-recovery:} Fundamental recovery mechanics.
+\end{itemize}
+
+\subsection{WAL Capture \& State Provenance (WDB-001x)}
+Governs the capture of database state, mapping write-ahead logs (WAL) to cryptographic checkpoints.
+\begin{itemize}
+    \item \textbf{WDB-0010-wal-capture:} Write-ahead log capture mechanics.
+    \item \textbf{WDB-0011-external-checkpoints:} Creation of verifiable external checkpoints.
+    \item \textbf{WDB-0012-checkpoint-anchoring:} Mechanisms for cryptographic anchoring.
+    \item \textbf{WDB-0013-recovery-provenance:} Ensuring deterministic provenance during recovery.
+    \item \textbf{WDB-0014-capture-equivalence:} Validating equivalence of captured state.
+\end{itemize}
+
+\subsection{External Anchoring \& Consensus (WDB-002x)}
+Defines the interaction with external, immutable networks (such as simulated EVM layers) to ground internal consensus.
+\begin{itemize}
+    \item \textbf{WDB-0020-external-anchor-protocol:} Interfacing with external trust networks.
+    \item \textbf{WDB-0021-evm-anchor:} EVM-compatible smart contract anchoring.
+    \item \textbf{WDB-0022-anchor-verification:} Verifying inbound and outbound anchors.
+    \item \textbf{WDB-0023-multi-anchor-consensus:} Consensus over multiple anchor domains.
+    \item \textbf{WDB-0024-anchor-failure-semantics:} Handling degraded anchor states.
+    \item \textbf{WDB-0025-multi-database-adapters:} Portability across varied RDBMS layers.
+\end{itemize}
+
+\subsection{Sentinel Architecture \& Self-Healing (WDB-003x)}
+\begin{itemize}
+    \item \textbf{WDB-0030-sentinel-architecture} to \textbf{WDB-0035-autonomous-recovery-safety-model:} Defines anomaly detection baselines, recovery proposal protocols, and the autonomous self-healing policy engine.
+\end{itemize}
+
+\subsection{Distributed Incident Response (WDB-004x)}
+\begin{itemize}
+    \item \textbf{WDB-0040-distributed-incident-identity} to \textbf{WDB-0045-distributed-recovery-safety:} Covers the incident correlation graph, distributed risk engine, and coordinated response.
+\end{itemize}
+
+\subsection{Federated Identity \& Quarantine (WDB-005x)}
+\begin{itemize}
+    \item \textbf{WDB-0050-node-identity-protocol} to \textbf{WDB-0055-federated-recovery-authorization:} Details node identity, trust attestation, federated event authentication, and node quarantine mechanisms.
+\end{itemize}
+
+\subsection{Verified State Reconstruction (WDB-006x)}
+\begin{itemize}
+    \item \textbf{WDB-0060-verified-state-frontier} to \textbf{WDB-0066-reconstruction-cli-productization:} Provides the mathematical blueprints for reconstruction manifests, proof protocols, and recovery boundary detection.
+\end{itemize}
+
+\subsection{Continuous Verification \& Dependency Graphs (WDB-007x)}
+\begin{itemize}
+    \item \textbf{WDB-0070-continuous-verified-reconstruction} to \textbf{WDB-0076-wolverine-trust-service-interface:} Addresses state dependency graphs, interleaved mutation classification, and state conflict resolution policies.
+\end{itemize}
+
+\subsection{Trust Network Protocol \& Runtime (WDB-008x to WDB-009x)}
+\begin{itemize}
+    \item \textbf{WDB-0080-series:} Tenant-isolated trust commitments, ledger record formats, validator attestation, and network failure semantics.
+    \item \textbf{WDB-0090-series:} Distributed trust runtime architecture, transport protocols, ledger state machine replication, and dual-timeline trust time.
+\end{itemize}
+
+\subsection{Production BFT \& Post-Compromise Security (WDB-010x to WDB-011x)}
+\begin{itemize}
+    \item \textbf{WDB-0100-series:} Byzantine quorum safety theorems, compromised gateway defense, and zero-trust offline proofs.
+    \item \textbf{WDB-0110-series:} Post-compromise audit preservation, malicious primary replica defense, customer key rotation, and immutable trust receipts.
+\end{itemize}
+
+\subsection{Survivability \& Cryptographic Encoding (WDB-012x to WDB-013x)}
+\begin{itemize}
+    \item \textbf{WDB-0120-series:} Ledger snapshot semantics, crash-safe validator journals, and customer disaster queues.
+    \item \textbf{WDB-0130-series:} Cryptographic encoding, atomic append concurrency, explicit authorization scoping, and locale-independent byte-level determinism.
+\end{itemize}
+
+\section{Implementation \& Evidence}
+
+The specifications outlined above map directly to the corresponding mathematical and infrastructural code within the WolverineDB repository. Notably, the simulated Byzantine Fault Tolerance (BFT) mechanisms, such as those defined in the 110-series, are mathematically strictly enforced. However, they are operationally decoupled from the physical transport via the \texttt{DirectMemoryNetworkTransport} module, which simulates the network layer synchronously to maintain local testability.
+
+In the broader context of the Wolverine-SIH entity resolution engine, these robust trust foundations allow analytical algorithms to operate securely. As an architectural invariant, conflict resolution and entity linkage behaviors rely on a linear 30-day temporal decay algorithm rather than exponential decay. The linkage thresholds are rigorously pinned at $0.92$ for automatic linkage and $0.70$ for manual review.
+
+\section{Limitations}
+
+Despite the robust cryptographic specifications documented in the WDB repository, the architecture acknowledges several systemic limitations. The most prominent is the reliance on the simulated \texttt{DirectMemoryNetworkTransport} rather than physically distributed nodes for network state propagation. Furthermore, while the external data components utilize WebGL strictly for particle simulations (e.g., in the Vzeya cinematic frontend), effects such as the CRT boot sequence rely entirely on CSS repeating-linear-gradients rather than complex GLSL shaders, ensuring broader frontend compatibility. Similarly, graph projection queries within the Wolverine-SIH ecosystem exclusively utilize an in-memory Bounded BFS search space (capped at a depth limit of 4), completely eschewing PostgreSQL recursive CTEs to prevent unchecked database recursive evaluation loops.
+
+\section{Research Significance}
+
+The WDB specification repository provides a monumental blueprint for decentralized, trust-minimized ledger operations integrated seamlessly into a traditional RDBMS. By delineating every component—from catastrophic cluster recovery and Byzantine node quarantine to ledger concurrency—the architecture establishes a unified framework that balances rigorous academic security models with high-throughput operational realities.

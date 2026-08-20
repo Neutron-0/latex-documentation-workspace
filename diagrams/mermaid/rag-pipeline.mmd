@@ -1,0 +1,14 @@
+flowchart LR
+    A["Analyst Query"] --> B["Fetch Graph\nContext Nodes"]
+    B --> C{"Sanitization\n(4 Rules)"}
+    C --> D["1. Strip control chars"]
+    C --> E["2. Truncate to 500 chars"]
+    C --> F["3. Mask injection patterns"]
+    C --> G["4. Cap to 20 records"]
+    D & E & F & G --> H["Construct Prompt\nTemplate"]
+    H --> I{"Ollama\nAvailable?"}
+    I -->|Yes| J["POST ollama:11434\n/api/generate"]
+    I -->|Timeout >5s| K["Deterministic\nFallback String"]
+    J --> L["Parse JSON Response\n{answer, confidence, citations}"]
+    K --> M["Return to\nAnalyst UI"]
+    L --> M

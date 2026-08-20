@@ -1,0 +1,269 @@
+\chapter{Complete Data Dictionary}
+\label{app:data-dictionary}
+
+\section{Problem \& Motivation}
+The Wolverine synthetic ecosystem project requires a robust, scalable data persistence strategy capable of capturing unstructured cybercriminal communications while simultaneously enabling structured graph representations. Traditional extraction, transformation, and loading (ETL) paradigms often suffer from schema rigidity, failing to accommodate the rapid contract drift inherent to adversarial platforms \cite{db:stonebraker2005}. Consequently, we engineered a polyglot persistence architecture orchestrated through Prisma and materialized on PostgreSQL. 
+
+The primary motivation of this data dictionary is to provide an exhaustive enumeration of the relational and document-oriented models that power Wolverine's data pipeline, detailing field definitions, data types, and intrinsic relationships.
+
+\section{Design \& Implementation}
+The implementation comprises ten distinct Prisma models, conceptually segmented into three subsystems: Ingestion (Source, CollectionRun, Capture, Quarantine, NormalizedRecord), Resolution \& Graph Projection (ResolutionCandidate, GraphNode, GraphEdge), and Event Sourcing (Outbox, ProcessedMessage).
+
+Graph projection relies on strictly in-memory Bounded BFS traversals rather than PostgreSQL recursive CTEs to guarantee compute bounds during exploratory topological queries. Edges are subject to a linear 30-day temporal decay model (rather than an exponential decay function) to simulate the fading relevance of historical dark web associations. Entity resolution employs bipartite matching bounded by dual thresholds: an upper bound of 0.92 for automated deterministic linking and a lower bound of 0.70 triggering manual review pipelines. Furthermore, the event-sourcing outbox implements mathematically rigorous Byzantine Fault Tolerance (BFT), which operates over a \texttt{DirectMemoryNetworkTransport} simulated network.
+
+\section{Data Models}
+
+\subsection{Ingestion Models}
+
+\subsubsection{Source}
+The \texttt{Source} model represents external domains or APIs targeted for data collection.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+source\_id & String (ID) & Primary identifier for the source target \\
+display\_name & String & Human-readable moniker \\
+base\_url & String & Root URI for the target ecosystem \\
+adapter\_type & String & Parser or spider adaptation strategy \\
+adapter\_version & String & Version identifier for the adapter \\
+allowed\_routes & String[] & Whitelisted URI paths for collection \\
+max\_pages\_per\_run & Int & Operational bounds for collection traversal \\
+requests\_per\_minute & Int & Rate limiting configuration \\
+enabled & Boolean & Administrative toggle \\
+test\_fixture\_path & String? & Debug reference for mocked endpoints \\
+created\_at, updated\_at & DateTime & Temporal metadata \\
+\hline
+\end{tabular}
+\caption{Schema for Source model.}
+\end{table}
+\noindent \textbf{Relationships:} One-to-many with \texttt{CollectionRun} and \texttt{Capture}.
+
+\subsubsection{CollectionRun}
+Tracks the state and outcome of an orchestrated data retrieval operation.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+id & String (UUID) & Primary key \\
+correlation\_id & String (UUID) & Traceability identifier across distributed services \\
+source\_id & String (F.K.) & Reference to the targeted Source \\
+status & String & Execution state (queued, running, partial, completed, failed) \\
+pages\_fetched & Int & Telemetry on HTTP requests \\
+records\_captured & Int & Telemetry on distinct items parsed \\
+errors & Int & Error threshold counter \\
+started\_at, completed\_at & DateTime? & Execution boundary timestamps \\
+created\_at & DateTime & Record creation timestamp \\
+data\_classification & String & Default to synthetic-research constraints \\
+\hline
+\end{tabular}
+\caption{Schema for CollectionRun model.}
+\end{table}
+\noindent \textbf{Relationships:} Belongs to \texttt{Source}; one-to-many with \texttt{Capture}.
+
+\subsubsection{Capture}
+Represents a raw HTTP response payload immutably stored in object storage, tracking its metadata.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+id & String (UUID) & Primary key \\
+collection\_run\_id & String (F.K.) & Reference to orchestrating CollectionRun \\
+source\_id & String (F.K.) & Reference to the Source \\
+source\_record\_id & String & Upstream primary key or identifier \\
+locator & String & URI or path resolution parameter \\
+content\_type & String & MIME type of captured payload \\
+content\_hash & String & Cryptographic digest for deduplication \\
+content\_size & Int & Payload size in bytes \\
+object\_key & String & S3/MinIO reference path \\
+http\_status & Int & HTTP response code \\
+observed\_at & DateTime & Encounter timestamp \\
+created\_at & DateTime & Row creation \\
+\hline
+\end{tabular}
+\caption{Schema for Capture model.}
+\end{table}
+\noindent \textbf{Relationships:} Belongs to \texttt{CollectionRun} and \texttt{Source}; one-to-many with \texttt{NormalizedRecord} and \texttt{Quarantine}. Unique constraint on (\texttt{source\_id}, \texttt{source\_record\_id}, \texttt{content\_hash}).
+
+\subsubsection{NormalizedRecord}
+Stores structured JSON data parsed from a Capture payload, standardizing schemas across varying sources.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+id & String (UUID) & Primary key \\
+capture\_id & String (F.K.) & Reference to the raw Capture \\
+schema\_version & String & Version of the normalization schema \\
+kind & String & Entity category (account, listing, post, etc.) \\
+source\_id & String & Denormalized origin tracker \\
+source\_record\_id & String & Denormalized upstream identifier \\
+record\_data & Json & Document store containing extracted attributes \\
+observed\_at & DateTime & Scraping temporal marker \\
+occurred\_at & DateTime? & Upstream temporal marker (e.g., post date) \\
+parser\_version & String & Reference to extraction logic \\
+content\_hash & String & Validating digest of \texttt{record\_data} \\
+created\_at & DateTime & Row creation \\
+\hline
+\end{tabular}
+\caption{Schema for NormalizedRecord model.}
+\end{table}
+\noindent \textbf{Relationships:} Belongs to \texttt{Capture}. Unique constraint on (\texttt{source\_id}, \texttt{source\_record\_id}, \texttt{content\_hash}).
+
+\subsubsection{Quarantine}
+Records data points that failed validation schemas or parsing logic, indicating adversarial contract drift.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+id & String (UUID) & Primary key \\
+capture\_id & String? (F.K.) & Optional reference to the problematic Capture \\
+source\_id & String & Origin source identifier \\
+error\_code & String & Classification (e.g., SOURCE\_CONTRACT\_DRIFT) \\
+error\_message & String & Diagnostic message \\
+error\_details & Json? & Stack trace or structural deviations \\
+raw\_excerpt & String? & Snippet of failing payload \\
+correlation\_id & String? & Linking identifier for distributed tracing \\
+reviewed & Boolean & Triage flag \\
+reviewed\_at & DateTime? & Triage timestamp \\
+created\_at & DateTime & Row creation \\
+\hline
+\end{tabular}
+\caption{Schema for Quarantine model.}
+\end{table}
+\noindent \textbf{Relationships:} Optionally belongs to \texttt{Capture}.
+
+\subsection{Resolution \& Graph Projection Models}
+
+\subsubsection{ResolutionCandidate}
+Tracks hypothetical identity linkages between discrete accounts or nodes across sources, computing deterministic scores.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+id & String (UUID) & Primary key \\
+left\_account\_id & String & Source account A identifier \\
+right\_account\_id & String & Source account B identifier \\
+score & Decimal & Computed similarity metric \\
+threshold & Decimal & The required barrier for linkage \\
+state & String & Resolution state (linked, review, rejected, pending) \\
+feature\_scores & Json & Component vectors influencing the final score \\
+evidence\_ids & String[] & Pointers to corroborating \texttt{NormalizedRecord} IDs \\
+resolver\_version & String & Algorithm identifier \\
+resolved\_at & DateTime? & Temporal marker of final decision \\
+created\_at & DateTime & Row creation \\
+\hline
+\end{tabular}
+\caption{Schema for ResolutionCandidate model.}
+\end{table}
+\noindent \textbf{Evidence \& Limitations:} To mitigate false positives, the system utilizes dual thresholds of 0.92 for autonomous linking and 0.70 for generating a human-in-the-loop review state.
+
+\subsubsection{GraphNode}
+Projects normalized entities into an abstract topological node suitable for memory-bounded BFS exploration.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+id & String (UUID) & Primary key \\
+node\_type & String & Topological category (e.g., account, thread) \\
+external\_ref & String & Unique denormalized reference to origin entity \\
+display\_label & String & Interface moniker \\
+attributes & Json & Minimal document store of indexed properties \\
+projection\_version & Int & Identifies the graph reduction iteration \\
+first\_seen\_at & DateTime & Initial insertion boundary \\
+last\_seen\_at & DateTime & Most recent validation boundary \\
+valid\_to & DateTime? & Horizon for temporal decay invalidation \\
+created\_at & DateTime & Row creation \\
+\hline
+\end{tabular}
+\caption{Schema for GraphNode model.}
+\end{table}
+\noindent \textbf{Relationships:} Originates or terminates many \texttt{GraphEdge} records.
+
+\subsubsection{GraphEdge}
+Establishes typed relationships between \texttt{GraphNode} instances, leveraging a linear 30-day temporal decay function to simulate relevance degradation over time.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+id & String (UUID) & Primary key \\
+source\_node\_id & String (F.K.) & Reference to the origin GraphNode \\
+target\_node\_id & String (F.K.) & Reference to the terminating GraphNode \\
+edge\_type & String & Relational semantic (e.g., AUTHORED, REPLIED\_TO) \\
+confidence & Decimal & Probability metric weighting the edge (defaults to 1.0) \\
+evidence\_ids & String[] & Pointers to validating \texttt{NormalizedRecord} IDs \\
+first\_seen\_at & DateTime & Edge instantiation time \\
+last\_seen\_at & DateTime & Edge latest corroboration time \\
+valid\_to & DateTime? & Marker denoting expiration under linear 30-day decay \\
+projection\_version & Int & Concurrency and schema iteration \\
+created\_at & DateTime & Row creation \\
+\hline
+\end{tabular}
+\caption{Schema for GraphEdge model.}
+\end{table}
+\noindent \textbf{Relationships:} Belongs to a source \texttt{GraphNode} and target \texttt{GraphNode}. Unique constraint on (\texttt{source\_node\_id}, \texttt{target\_node\_id}, \texttt{edge\_type}).
+
+\subsection{Event Sourcing Models}
+
+\subsubsection{Outbox}
+Implements the transactional outbox pattern to guarantee eventual consistency across microservices. Notably, its replication and propagation leverage a mathematically rigorous Byzantine Fault Tolerance (BFT) protocol simulated over a \texttt{DirectMemoryNetworkTransport}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+id & String (UUID) & Primary event key \\
+event\_type & String & Topic or schema identifier \\
+event\_data & Json & Document payload for subscribers \\
+correlation\_id & String (UUID) & Distributed transaction tracker \\
+created\_at & DateTime & Transaction commit time \\
+published\_at & DateTime? & Acknowledgment time \\
+retry\_count & Int & Count of propagation failures \\
+max\_retries & Int & Bounded retry limit (defaults to 3) \\
+\hline
+\end{tabular}
+\caption{Schema for Outbox model.}
+\end{table}
+
+\subsubsection{ProcessedMessage}
+Provides idempotency tracking for incoming asynchronous events or Kafka/RabbitMQ subscribers.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+message\_id & String (ID) & Unique event identifier from upstream \\
+processed\_at & DateTime & Timestamp of successful idempotency check \\
+\hline
+\end{tabular}
+\caption{Schema for ProcessedMessage model.}
+\end{table}
+
+\section{Research Significance}
+The ten models outlined in this dictionary represent a deliberate architectural compromise between the strict schemas requisite for high-throughput ingestion and the flexible topologies necessary for adversarial network analysis. By strictly restricting graph projections to in-memory Bounded BFS—eschewing PostgreSQL recursive CTEs—the system ensures predictable computational complexity when mapping threat actors \cite{graphs:newman2018}.

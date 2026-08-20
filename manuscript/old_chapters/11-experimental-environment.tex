@@ -1,0 +1,137 @@
+\chapter{Prototype and Experimental Environment}
+\label{ch:experimental-environment}
+
+A mathematically rigorous evaluation requires an explicit accounting of the experimental conditions. This chapter details the prototype deployment topology, the deterministic synthetic data generation parameters, and the exact reproducibility protocol required to instantiate the environment. It explicitly distinguishes between functional prototype verification and large-scale operational benchmarking.
+
+\section{Experimental Purpose}
+\label{sec:exp-purpose}
+The Wolverine prototype environment is constructed exclusively to validate architectural integration and functional correctness. Specifically, the environment is intended to demonstrate:
+\begin{itemize}
+    \item Deterministic generation of a synthetic ground truth.
+    \item The successful execution of the 8-stage data lifecycle (Observation to Synthesis).
+    \item The operational isolation of the \texttt{postgres-truth} evaluation vault.
+    \item The bounded termination of the Breadth-First Search (BFS) graph projection.
+    \item The safe fallback execution of the RAG pipeline during LLM timeouts.
+\end{itemize}
+It is explicitly \textit{not} designed for production-scale benchmarking, real-world human attribution, or establishing empirical accuracy metrics across organic, uncontrolled datasets.
+
+\section{Experimental Hypotheses}
+\label{sec:exp-hypotheses}
+The environment facilitates the testing of specific, functionally bounded hypotheses:
+\begin{itemize}
+    \item \textbf{Demonstrated Question:} Can heterogeneous JSON/HTML payloads be consistently normalized into the \texttt{CanonicalRecord} schema without data loss?
+    \item \textbf{Demonstrated Question:} Does the bounded BFS terminate precisely at $d \le 4$ and $N \le 500$?
+    \item \textbf{Demonstrated Question:} Does the Docker \texttt{internal: true} network configuration physically drop TCP packets routed from the ingestion engine to the Truth Vault?
+    \item \textbf{Future Experiment:} What is the measurable False Positive Rate (FPR) of the Jaro-Winkler heuristic ensemble when subjected to adversarial alias perturbations?
+\end{itemize}
+
+\section{Hardware and Host Assumptions}
+\label{sec:exp-hardware}
+The prototype is designed for local developer execution rather than clustered deployment.
+Verified assumptions include:
+\begin{itemize}
+    \item \textbf{Runtime Engine:} Docker Engine (v24+) with Docker Compose plugin.
+    \item \textbf{Resource Limits:} Minimum 16GB RAM (primarily to support the \texttt{ollama} Llama-3.2 container).
+    \item \textbf{Host Ports:} Requires binding availability on \texttt{80}, \texttt{443}, \texttt{3000} (Vzeya), \texttt{4000} (API), and mapped database ports (e.g., \texttt{5432}, \texttt{5433}, \texttt{5434}).
+    \item \textbf{Hardware Acceleration:} CUDA is supported by the Ollama container but is not strictly required for execution (CPU fallback incurs high latency, triggering the deterministic LLM timeout).
+\end{itemize}
+
+\section{Software Environment}
+\label{sec:exp-software}
+\Cref{tab:software-environment} documents the verified software stack required for reproducible execution.
+
+\begin{table}[h]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{p{0.15\textwidth} p{0.10\textwidth} p{0.25\textwidth} p{0.25\textwidth} p{0.20\textwidth}}
+\toprule
+\textbf{Component} & \textbf{Version} & \textbf{Role} & \textbf{Configuration} & \textbf{Reproducibility Status} \\
+\midrule
+Node.js & 20.x & API, Parsers, Daemons & \texttt{package.json} & Locked \\
+Python & 3.11+ & Synthetic Generator & \texttt{requirements.txt} & Locked \\
+React / Vite & 18.x & Analyst UI & \texttt{package.json} & Locked \\
+Next.js & 14.x & Vzeya Presentation & \texttt{package.json} & Locked \\
+PostgreSQL & 16.x & Canonical, Sites, Truth Vault & \texttt{docker-compose.yml} & Locked \\
+MySQL & 8.4 & Cinder Exchange DB & \texttt{docker-compose.yml} & Locked \\
+Redis & 7.2 & Async Pub/Sub Broker & \texttt{docker-compose.yml} & Locked \\
+MinIO & latest & Immutable Object Store & \texttt{docker-compose.yml} & Volatile (Image Tag) \\
+Ollama & latest & Local LLM Inference & \texttt{docker-compose.yml} & Volatile (Image Tag) \\
+\bottomrule
+\end{tabular}
+}
+\caption{Verified Software Environment Inventory}
+\label{tab:software-environment}
+\end{table}
+
+\section{Deployment Topology and Initialization}
+\label{sec:exp-deployment}
+The environment initializes via a strict dependency graph governed by Docker Compose \texttt{depends\_on} and \texttt{healthcheck} directives:
+\begin{enumerate}
+    \item \textbf{Network Initialization:} \texttt{dmz}, \texttt{internal}, and \texttt{truth} bridge networks are established.
+    \item \textbf{Persistence Layer:} \texttt{postgres-wdb}, \texttt{neo4j}, \texttt{redis}, and \texttt{minio} boot. API containers wait in \texttt{starting} state until PostgreSQL TCP ports answer.
+    \item \textbf{Synthetic Seeding:} The Python \texttt{generator} scripts execute, populating \texttt{postgres-sites} and \texttt{postgres-truth}.
+    \item \textbf{Core Services:} \texttt{wolverine-api}, \texttt{entity-resolver}, and \texttt{graph-projector} boot and connect to Redis.
+    \item \textbf{Frontends:} \texttt{vzeya} and \texttt{analyst-ui} start serving assets on host ports 3000 and 5173.
+\end{enumerate}
+
+\section{Synthetic Dataset Generation}
+\label{sec:exp-dataset}
+To guarantee reproducibility, the synthetic population engine uses a globally hardcoded deterministic master seed: $S_0 = 42$.
+
+\subsection{Generation Phases}
+The generator executes 13 distinct phases. Key phases include:
+\begin{itemize}
+    \item \textbf{Phase 1:} Generates 50,000 baseline "Canonical Persons" (the virtual humans).
+    \item \textbf{Phases 2--3:} Assigns virtual accounts to platforms based on a defined probability distribution, generating 89,605 distinct accounts.
+    \item \textbf{Phase 11:} Injects deliberate noise (3-8\% perturbation of relationships) to simulate adversarial obfuscation.
+    \item \textbf{Output:} The engine registers exactly 39,605 true correlation edges into the \texttt{postgres-truth} vault.
+\end{itemize}
+
+\subsection{Dataset Composition}
+\begin{table}[h]
+\centering
+\begin{tabular}{p{0.30\textwidth} p{0.20\textwidth} p{0.40\textwidth}}
+\toprule
+\textbf{Metric} & \textbf{Count} & \textbf{Classification} \\
+\midrule
+Synthetic Persons & 50,000 & Configured Target Quantity \\
+Total Accounts & 89,605 & Generated Quantity \\
+Source Platforms & 5 & Configured Parameter \\
+Ground-Truth Linkages & 39,605 & Generated Quantity (in Truth Vault) \\
+\bottomrule
+\end{tabular}
+\caption{Synthetic Dataset Composition Characteristics}
+\label{tab:dataset-characteristics}
+\end{table}
+
+\section{Determinism and Its Limits}
+\label{sec:exp-determinism}
+The seed $S_0 = 42$ guarantees that the Python engine will generate the exact same 89,605 accounts across different host machines. This provides a mathematically stable baseline for evaluation.
+
+However, the architecture explicitly does \textit{not} guarantee runtime determinism.
+\begin{itemize}
+    \item \textbf{Network Timing:} Redis Pub/Sub delivery times and HTTP ingestion latency are non-deterministic.
+    \item \textbf{Database IDs:} Auto-incrementing primary keys in PostgreSQL may differ based on async ingestion ordering.
+    \item \textbf{LLM Synthesis:} The Llama-3.2 outputs (unless explicitly bounded by temperature 0.0) are inherently stochastic.
+\end{itemize}
+Thus, while the \textit{data} is deterministic, the \textit{execution trace} is organic.
+
+\section{Reproducibility Protocol}
+\label{sec:exp-protocol}
+An external researcher can perfectly replicate the functional prototype via the following protocol:
+\begin{enumerate}
+    \item \textbf{Preparation:} Clone repository; ensure Docker Engine is active.
+    \item \textbf{Environment:} Copy \texttt{.env.example} to \texttt{.env}.
+    \item \textbf{Boot:} Execute \texttt{docker-compose up -d --build}.
+    \item \textbf{Verification (State):} Wait for \texttt{docker-compose logs wolverine-api} to emit ``Server listening on port 4000''.
+    \item \textbf{Verification (Data):} Execute SQL query against \texttt{postgres-truth} on mapped port 5434 to assert \texttt{SELECT COUNT(*) FROM ground\_truth\_links} equals 39,605.
+\end{enumerate}
+
+\section{Failure Injection and Functional Verification}
+\label{sec:exp-failures}
+Specific failure paths have been verified functionally during prototype integration:
+\begin{itemize}
+    \item \textbf{Malformed Record Injection:} Submitting a \texttt{null} timestamp to \texttt{AtlasParser}. \textit{Observed:} Schema exception thrown, canonical insert aborted, HTTP 400 returned.
+    \item \textbf{LLM Denial of Service:} Manually killing the \texttt{ollama} container during RAG execution. \textit{Observed:} API promise rejects after 15s; deterministic fallback string \texttt{"System offline:..."} is returned to the Analyst UI successfully.
+    \item \textbf{Graph Explosion:} Querying a heavily connected root node. \textit{Observed:} \texttt{projector.ts} logs ``BFS limit reached''; graph rendering truncates gracefully at 500 nodes without OOM crash.
+\end{itemize}

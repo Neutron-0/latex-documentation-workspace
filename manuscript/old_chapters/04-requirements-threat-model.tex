@@ -1,0 +1,142 @@
+\chapter{System Requirements and Threat Model}
+\label{ch:requirements-threat-model}
+
+Designing a robust intelligence correlation platform requires explicit constraints. This chapter details the formal requirements, the assets protected, the architectural trust boundaries, and the specific threat vectors the Wolverine prototype is engineered to withstand.
+
+\section{Stakeholders and Actors}
+\label{sec:requirements-actors}
+The system defines explicit roles corresponding to independent subsystems and user profiles. Only the following actors exist within the prototype boundary:
+
+\begin{itemize}
+    \item \textbf{Analyst (Human):} A trusted user interacting exclusively with the Analyst UI to query identities and review RAG-synthesized case files.
+    \item \textbf{Synthetic Generator (Machine):} A deterministic Python engine executing outside the analytical boundary, injecting simulated records into the DMZ.
+    \item \textbf{Ingestion Adapters (Machine):} Stateless parsing services responsible for normalizing incoming heterogeneous HTTP payloads.
+    \item \textbf{Entity Resolver (Machine):} The core analytical backend calculating probabilistic linkage scores.
+    \item \textbf{RAG Engine / Ollama (Machine):} The LLM inference service synthesizing graph narratives.
+    \item \textbf{Truth Vault (Machine):} The isolated, air-gapped storage layer maintaining the deterministic ground truth for evaluation.
+\end{itemize}
+
+\section{System Assets}
+\label{sec:requirements-assets}
+To construct a valid threat model, the system's assets must be explicitly enumerated and prioritized by criticality.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{0.25\textwidth} p{0.4\textwidth} p{0.25\textwidth}}
+\toprule
+\textbf{Asset} & \textbf{Description} & \textbf{Protection Priority} \\
+\midrule
+\textbf{Truth Vault State} & The deterministic ground truth mappings linking aliases to actual synthetic personas. & Critical (Integrity/Confidentiality) \\
+\addlinespace
+\textbf{Canonical Records} & Normalized representations of ingested platform data. & High (Integrity) \\
+\addlinespace
+\textbf{Candidate Graph} & The projected BFS adjacency lists representing the linkage hypotheses. & Medium (Availability) \\
+\addlinespace
+\textbf{Cryptographic State} & WolverineDB Merkle roots and signature hashes. & High (Integrity) \\
+\addlinespace
+\textbf{LLM Context} & The sanitized prompts sent to the RAG engine. & High (Integrity/Safety) \\
+\bottomrule
+\end{tabular}
+\caption{System Asset Inventory}
+\label{tab:asset-inventory}
+\end{table}
+
+\section{Functional Requirements}
+\label{sec:requirements-functional}
+The operational capabilities of the Wolverine prototype are governed by explicit Functional Requirements (FR). \Cref{tab:functional-requirements} traces these requirements to their implementation components.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{0.1\textwidth} p{0.25\textwidth} p{0.25\textwidth} p{0.3\textwidth}}
+\toprule
+\textbf{ID} & \textbf{Requirement} & \textbf{Inputs $\rightarrow$ Outputs} & \textbf{Implementation Module} \\
+\midrule
+\textbf{FR-01} & Heterogeneous Ingestion & HTTP Payloads $\rightarrow$ Canonical Records & Parser Services (REST/GraphQL) \\
+\addlinespace
+\textbf{FR-02} & Alias Correlation & Canonical Records $\rightarrow$ Candidate Links & Entity Resolver (Jaro-Winkler) \\
+\addlinespace
+\textbf{FR-03} & Graph Projection & Candidate Links $\rightarrow$ BFS Subgraphs & Graph Projector \\
+\addlinespace
+\textbf{FR-04} & Narrative Synthesis & BFS Subgraphs $\rightarrow$ Text Summaries & Ollama RAG Engine \\
+\addlinespace
+\textbf{FR-05} & State Integrity & Canonical Records $\rightarrow$ Merkle Roots & WolverineDB \\
+\bottomrule
+\end{tabular}
+\caption{Functional Requirements Traceability}
+\label{tab:functional-requirements}
+\end{table}
+
+If an ingestion parser (FR-01) fails due to unhandled schema drift, the system explicitly drops the payload to prevent corruption of the canonical datastore, prioritizing system integrity over data completeness.
+
+\section{Non-Functional Requirements}
+\label{sec:requirements-nonfunctional}
+The constraints governing \textit{how} the system executes are defined by Non-Functional Requirements (NFR). 
+
+\begin{itemize}
+    \item \textbf{NFR-01 (Determinism):} The synthetic generator must always produce the exact same 50,000 personas given the initial seed $S_0=42$. \textit{Rationale:} Enables objective reproducibility of evaluation metrics.
+    \item \textbf{NFR-02 (Isolation):} The inference pipeline must have zero network access to the Truth Vault. \textit{Rationale:} Prevents the resolver from "cheating" by directly querying the ground truth.
+    \item \textbf{NFR-03 (Bounded Resources):} Graph traversal must not exceed depth $d=4$ or $N=500$ nodes. \textit{Rationale:} Prevents out-of-memory crashes during high-throughput demonstration runs.
+    \item \textbf{NFR-04 (Zero PII):} The system must absolutely reject or refrain from generating genuine Personally Identifiable Information. \textit{Rationale:} Mandatory ethical boundary for the SIH demonstration.
+\end{itemize}
+
+\section{Trust Boundaries}
+\label{sec:requirements-trust-boundaries}
+The architecture enforces three explicit trust domains, implemented via Docker network isolation (detailed in \Cref{ch:system-architecture}):
+
+\begin{enumerate}
+    \item \textbf{DMZ (Untrusted):} The public-facing ingest endpoints (Nginx) and presentation UI. Data here is considered hostile.
+    \item \textbf{Internal (Semi-Trusted):} The processing core (PostgreSQL, Neo4j, Entity Resolver). Data here is sanitized and canonicalized, but still subject to strict algorithmic bounds.
+    \item \textbf{Truth Vault (Strictly Trusted):} The air-gapped evaluation datastore. Only the synthetic generator (during initialization) and the evaluator (during scoring) may interact with this boundary.
+\end{enumerate}
+
+\section{Threat Model}
+\label{sec:requirements-threat-model}
+To evaluate the system's defensive posture, \Cref{tab:threat-matrix} maps specific attack vectors against the system's implemented controls, referencing the STRIDE methodology established by Shostack \cite{shostack2014threat} and NIST guidelines for risk assessment \cite{nist2012guide}.
+
+\begin{table}[h]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{p{0.05\textwidth} p{0.15\textwidth} p{0.1\textwidth} p{0.3\textwidth} p{0.3\textwidth}}
+\toprule
+\textbf{ID} & \textbf{Threat Actor} & \textbf{STRIDE} & \textbf{Attack Vector} & \textbf{Implemented Control} \\
+\midrule
+\textbf{T-01} & Malicious Persona & Spoofing & Prompt Injection in profile description & 4-Rule Regex sanitization + 500-char truncation \\
+\addlinespace
+\textbf{T-02} & Rogue Analyst & Info Discl. & Direct query to Truth Vault to skew metrics & Docker network air-gap (`internal: true`) \\
+\addlinespace
+\textbf{T-03} & External Attacker & DoS & API Flooding / DoS on ingestion & Nginx rate limiting (10 req/s) \\
+\addlinespace
+\textbf{T-04} & Malicious Persona & Spoofing & Sybil attack (massive fake alias generation) & Jaro-Winkler thresholding + Time decay penalty \\
+\addlinespace
+\textbf{T-05} & Internal Attacker & Tampering & Tampering with canonical PostgreSQL records & WolverineDB Merkle state hashes \\
+\addlinespace
+\textbf{T-06} & Internal Attacker & Elevation & RBAC Header Spoofing via forged \texttt{X-Wolverine-Role} & API Gateway signature validation / internal routing checks \\
+\addlinespace
+\textbf{T-07} & Local Exploit & Elevation & Container Escape breaking Docker daemon isolation & Drop default privileges, unprivileged runtime \\
+\addlinespace
+\textbf{T-08} & Poisoned Data & Tampering & Model Poisoning via adversarial RAG data & Strict schema validation on ingestion prior to index \\
+\addlinespace
+\textbf{T-09} & System/Model & Repudiation & Synthetic-to-Real Domain Shift causing bad inference & Operational mandate requiring human analyst oversight \\
+\addlinespace
+\textbf{T-10} & System Fault & DoS/Spoofing & Outbox Event Replay causing duplicate processing & Idempotency keys in WolverineDB replay store \\
+\bottomrule
+\end{tabular}
+}
+\caption{System Threat Matrix and Mitigations}
+\label{tab:threat-matrix}
+\end{table}
+
+It must be noted that while T-05 (Database Tampering) is detected via cryptographic hashing, the underlying network consensus meant to prevent it (BFT) is currently an in-process simulation, marking a residual risk in the prototype.
+
+\section{Failure and Abuse Cases}
+\label{sec:requirements-failure-cases}
+The system explicitly handles several severe failure conditions:
+\begin{itemize}
+    \item \textbf{LLM Timeout/Failure:} If the Ollama service crashes or times out processing a RAG request, the system falls back to a deterministic, rule-based heuristic hypothesis generation, ensuring the Analyst UI never hangs indefinitely.
+    \item \textbf{Graph Explosion:} If a highly generic alias (e.g., "admin") links to thousands of accounts, the BFS traversal hard-stops at $N=500$, truncating the graph to prevent the node process from exceeding V8 memory limits.
+    \item \textbf{Malformed Payloads:} If an ingestion parser encounters an array where an object is expected, it strictly drops the payload and logs a validation error, preventing schema corruption in PostgreSQL.
+\end{itemize}
+
+\section{Ethical and Operational Constraints}
+\label{sec:requirements-ethical}
+Wolverine is designed under a mandatory synthetic-data constraint. Because probabilistic entity resolution inherently generates false positives, deploying this architecture against real-world populations without definitive human-in-the-loop verification introduces severe ethical risks of misattribution. The prototype deliberately operates purely on deterministic synthetic data to prove the engineering integration without incurring these real-world liabilities. A full ethical analysis is provided in \Cref{ch:security-ethics}.

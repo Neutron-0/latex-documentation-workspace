@@ -1,0 +1,136 @@
+\chapter{Frontend Systems Architecture}
+\label{ch:frontend-systems}
+
+This chapter details the frontend engineering of the Wolverine project. Specifically, it documents the dual-frontend architecture comprising the Vzeya cinematic presentation layer and the Analyst UI functional wireframe. It is critical to state at the outset that \textit{neither frontend currently connects to the functional backend APIs}; both operate entirely on mock or static data structures to serve their respective roles in the project narrative.
+
+\section{Frontend Architecture Overview}
+\label{sec:fe-overview}
+
+The Wolverine project employs a dual-frontend design pattern. This bifurcation explicitly separates the cinematic narrative presentation (Vzeya) from the functional wireframing of the threat analysis interface (Analyst UI). Each frontend serves a distinct purpose in the research and demonstration phases.
+
+While the backend architecture provides real REST endpoints and data processing capabilities (as documented in \Cref{ch:implementation}), neither the Vzeya frontend nor the Analyst UI frontend currently interfaces with these real APIs. Both systems operate exclusively on static, mocked data to isolate presentation mechanics from backend data orchestration.
+
+\section{Vzeya: Cinematic Presentation Layer}
+\label{sec:fe-vzeya}
+
+Vzeya serves as the public-facing, high-fidelity presentation layer. It is designed to visually articulate the conceptual architecture of the Wolverine system through interactive WebGL environments and typography-driven UI.
+
+\subsection{Technology Stack}
+\label{sec:fe-vzeya-stack}
+
+The Vzeya stack prioritizes rendering performance and visual fidelity:
+\begin{itemize}
+    \item \textbf{Framework:} Next.js 15 App Router.
+    \item \textbf{WebGL:} React Three Fiber (\texttt{@react-three/fiber}) for declarative 3D scene graphs.
+    \item \textbf{Shaders:} Custom GLSL shaders implemented via \texttt{ShaderMaterial} for particle effects.
+    \item \textbf{Animation:} Framer Motion for DOM-based transitions.
+    \item \textbf{Scrolling:} Lenis for hardware-accelerated, smooth virtual scrolling.
+    \item \textbf{State Management:} Zustand for global application state.
+    \item \textbf{Styling:} Tailwind CSS featuring brutalist and monospace typography, with Shadcn UI serving as a component baseline.
+\end{itemize}
+
+\subsection{Routing and Component Hierarchy}
+\label{sec:fe-vzeya-routing}
+
+The application defines 18 static routes (e.g., \texttt{/}, \texttt{/architecture}, \texttt{/threat}, \texttt{/login}). The root layout (\texttt{layout.tsx}) wraps the application in critical global providers: a WebGL \texttt{Scene} context, a \texttt{CRTPostProcessing} overlay, \texttt{GlobalSound} managers, and an \texttt{AuthProvider}.
+
+The landing page implements a specialized four-phase cinematic sequence orchestrated by a \texttt{NarrativeScroller} component, guiding the user through the conceptual layers of the system.
+
+\subsection{WebGL and Shader System}
+\label{sec:fe-vzeya-webgl}
+
+The core visual identity of Vzeya relies on custom WebGL implementations:
+\begin{itemize}
+    \item \textbf{Particle Morphing:} The \texttt{InteractiveParticlesMesh.tsx} component utilizes a three-stage particle morphing system (Face1 $\rightarrow$ Face2 $\rightarrow$ Logo). The vertex displacement is driven by Simplex noise evaluated within the GLSL vertex shader.
+    \item \textbf{Spatial Interfaces:} The \texttt{Execution3DWorld.tsx} component renders a Phase 3 spatial terminal cyber-world, utilizing React Three Fiber's \texttt{<Html>} wrapper to embed interactive DOM elements within the 3D scene.
+    \item \textbf{Interactive Displacement:} Touch and mouse interactions trigger ripple displacements on particles, calculated via an offscreen Canvas texture that feeds displacement maps into the shader.
+    \item \textbf{Camera Mechanics:} Camera yaw and pitch spatial alignment calculations dynamically reorient the view based on scroll position and user interaction.
+\end{itemize}
+
+\subsection{CRT Post-Processing Effect}
+\label{sec:fe-vzeya-crt}
+
+Notably, the ubiquitous CRT visual aesthetic is implemented as a pure CSS overlay rather than a WebGL post-processing pass. This approach utilizes a \texttt{repeating-linear-gradient} for scanline emulation and a \texttt{radial-gradient} for vignetting. This architectural decision avoids the heavy performance overhead associated with full-screen shader passes, leaving GPU resources available for particle computations.
+
+\subsection{Data Sources}
+\label{sec:fe-vzeya-data}
+
+All data presented in Vzeya is 100\% mocked. The application relies on static arrays defined in \texttt{executionData.ts}. Hardcoded objects represent structures like \texttt{RECENT\_INTERCEPTS} and \texttt{VITALS\_METRICS}.
+
+Live data streams are merely simulated using \texttt{setInterval} paired with \texttt{Math.random()} to generate fluctuating numerical metrics. The authentication system in \texttt{auth-context.tsx} utilizes hardcoded credentials. There are no \texttt{fetch()} calls to any external or internal backend APIs.
+
+\section{Analyst UI: Functional Wireframe}
+\label{sec:fe-analyst-ui}
+
+The Analyst UI is a minimal, functional wireframe designed to prototype the analyst interaction model for threat investigation and RAG-assisted analysis.
+
+\subsection{Technology Stack}
+\label{sec:fe-analyst-stack}
+
+The stack for the Analyst UI is intentionally primitive to focus on rapid structural iteration:
+\begin{itemize}
+    \item \textbf{Framework:} React 18 using the Vite bundler.
+    \item \textbf{Architecture:} A strict Single-Page Application (SPA) with no routing library.
+    \item \textbf{State Management:} Pure React \texttt{useState} hooks.
+    \item \textbf{Rendering:} Raw HTML tables and native DOM elements for data display.
+\end{itemize}
+
+\subsection{Application Structure}
+\label{sec:fe-analyst-structure}
+
+The interface is driven by a monolithic \texttt{App.tsx} file (approximately 250 lines) that manages a tab-based navigation system spanning five views: scenarios, explorer, graph, ai, and review.
+
+To maintain research honesty, the interface persistently displays a banner stating: ``SYNTHETIC RESEARCH DEMO — NOT REAL DATA''.
+
+\subsection{Graph Visualization}
+\label{sec:fe-analyst-graph}
+
+Unlike standard analytical tools, the Analyst UI does not employ graph rendering libraries such as D3.js or Cytoscape. The node-link graph visualization is implemented purely as CSS and HTML flexbox \texttt{div} chains. It depicts sequential relationships (e.g., \texttt{Atlas: X ──► Briar: Y}) using standard typographic characters and flexbox alignment, functioning as a structural mock-up rather than a computable graph.
+
+\subsection{RAG Interaction Simulation}
+\label{sec:fe-analyst-rag}
+
+The AI investigator tab prototypes a Retrieval-Augmented Generation (RAG) Q\&A interface. However, the interaction is entirely simulated. A \texttt{setTimeout} function introduces an artificial 400ms latency before returning a hardcoded ``analytic hypothesis.'' The interface presents mock citations and predefined confidence scores to illustrate the intended UX without requiring an active LLM backend.
+
+\subsection{Data Sources}
+\label{sec:fe-analyst-data}
+
+Zero external API communication occurs within the Analyst UI. Everything operates on static arrays embedded directly within the React components. There are no \texttt{fetch()}, \texttt{axios}, or equivalent asynchronous API calls to the Wolverine backend or any external service.
+
+\section{Frontend Classification Matrix}
+\label{sec:fe-matrix}
+
+\Cref{tab:fe-classification} summarizes the architectural and functional distinctions between the two frontend systems.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Classification matrix comparing Vzeya and Analyst UI capabilities.}
+    \label{tab:fe-classification}
+    \begin{tabular}{@{}lll@{}}
+        \toprule
+        \textbf{Feature} & \textbf{Vzeya} & \textbf{Analyst UI} \\
+        \midrule
+        Backend connectivity & None (Mocked) & None (Mocked) \\
+        Data source & Static TS objects \& Math.random & Static component state arrays \\
+        Rendering engine & WebGL (R3F) + DOM & Pure React DOM \\
+        Graph library & Custom 3D spatial (simulated) & HTML Flexbox (simulated) \\
+        RAG interaction & None & Simulated via \texttt{setTimeout} \\
+        Authentication & Mocked context & None \\
+        Purpose & Cinematic narrative \& showcase & Functional UX wireframing \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Relationship Between Frontends and Backend}
+\label{sec:fe-backend-relationship}
+
+As emphasized throughout this chapter, neither frontend currently exercises the real \texttt{wolverine-api} backend. The backend infrastructure, comprehensively documented in \Cref{ch:implementation}, provides fully functional REST endpoints, database connections, and processing queues.
+
+The integration between the Analyst UI and the \texttt{wolverine-api} remains a future engineering task. Vzeya, conversely, is intentionally designed as a standalone presentation layer and is not slated for functional backend integration.
+
+\section{Architectural Justification}
+\label{sec:fe-justification}
+
+The decision to develop two distinct frontends—a cinematic showcase and a functional prototype—stems from the dual requirements of the project. Vzeya satisfies the need for high-impact visual communication of complex systemic concepts to stakeholders. The Analyst UI allows for rapid iteration on the dense, tabular interaction models required by intelligence analysts without the overhead of maintaining a complex WebGL environment.
+
+This separation of concerns maintains research honesty by visually isolating the stylized, mock visualizations from the pragmatic, functional wireframing. This dual-layer approach to frontend engineering in academic prototypes is an explicit methodological contribution of the project, as initially outlined in \Cref{ch:introduction}.

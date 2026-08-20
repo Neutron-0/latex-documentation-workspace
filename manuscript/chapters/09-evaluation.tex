@@ -1,0 +1,142 @@
+\chapter{Evaluation Methodology and Experimental Protocols}
+\label{ch:evaluation}
+
+\section{Methodological Framing and Evidence Taxonomy}
+\label{sec:eval_problem}
+
+Evaluating cross-platform cyber threat intelligence systems poses unique methodological hurdles. Because adversarial threat actors deliberately obfuscate operational footprints across disparate online platforms, real-world data lacks objective ground-truth labels \cite{soska2015measuring}. Relying on unverified commercial datasets risks conflating ungrounded model outputs with verified empirical truth. 
+
+To maintain scientific integrity, the Wolverine evaluation framework enforces a strict taxonomy across five distinct evidentiary tiers:
+
+\begin{enumerate}[label=\textbf{Tier \Alph*:}, leftmargin=2.5em]
+    \item \textbf{Empirical Evidence:} Dynamic measurements gathered from live software execution (e.g., unit test execution times, memory allocations, CPU profiling).
+    \item \textbf{Functional Verification:} Automated deterministic assertions proving software components satisfy contractual invariants (e.g., 219 WolverineDB security test suites, 8/8 Tor safety checks in \texttt{test-tor-safety.sh}, 65/65 full-ecosystem verifications in \texttt{verify\_full\_ecosystem.py}).
+    \item \textbf{Synthetic Demonstration:} Verification conducted against the closed 12-phase synthetic generator world (50,000 personas, 89,605 accounts across 5 heterogeneous web services).
+    \item \textbf{Static / Reference Outputs:} Constant baseline values embedded in test harnesses for structural validation rather than live empirical measurements (specifically: Precision = 0.9280, Recall = 0.4598, F1 = 0.6149).
+    \item \textbf{Unperformed / Future Experiments:} Formally specified experimental protocols designed to validate the system under scaled, dynamic, and adversarial conditions.
+\end{enumerate}
+
+\section{Phase 12 Ground-Truth Isolation Architecture}
+\label{sec:phase12_groundtruth}
+
+The cornerstone of the evaluation harness is the strict architectural isolation of the \texttt{postgres-truth} database container. During Phase 1 of synthetic world generation, the \texttt{SyntheticWorldEngine} deterministically instantiates 50,000 canonical personas, each assigned a master UUID. In Phase 2, personas are mapped to 1--5 platform accounts with realistic handle mutations (e.g., appending suffixes, character substitutions) and pseudorandom email addresses. The true mapping table:
+\begin{equation}
+\mathcal{T}_{\text{truth}} = \big\{ \langle \text{persona\_id}, \text{site\_id}, \text{account\_id} \rangle \big\}
+\end{equation}
+is inserted directly into \texttt{postgres-truth} on the isolated \texttt{wolverine-truth} Docker network (\texttt{internal: true}). The analytical ingestion and entity resolution engines running on \texttt{wolverine-internal} are strictly prevented from querying \texttt{postgres-truth}, guaranteeing that identity linkages represent true blind inferences rather than oracle data leaks.
+
+\section{Static Baseline Metrics Qualification}
+\label{sec:static_metrics_qualification}
+
+In the current prototype codebase, the evaluation CLI (\texttt{wolverine-sih/evaluator/src/evaluator/\_\_main\_\_.py}) surfaces the following reference baseline metrics:
+
+\begin{table}[htpb]
+\centering
+\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Metric} & \textbf{Static Value} & \textbf{Source File} & \textbf{Evidentiary Qualification} \\
+\midrule
+Precision & $0.9280$ ($92.80\%$) & \texttt{evaluator/\_\_main\_\_.py} & Static reference constant in test harness \\
+Recall & $0.4598$ ($45.98\%$) & \texttt{evaluator/\_\_main\_\_.py} & Static reference constant in test harness \\
+F1-Score & $0.6149$ & \texttt{evaluator/\_\_main\_\_.py} & Static reference constant in test harness \\
+Ecosystem Status & 65/65 Passed & \texttt{verify\_full\_ecosystem.py} & Dynamic functional verification pass \\
+Tor Safety & 8/8 Passed & \texttt{test-tor-safety.sh} & Dynamic security assertion pass \\
+WDB Test Suites & 87 Suites / 219 Tests & \texttt{wolverine-db/tests/} & Dynamic automated test suite pass \\
+\bottomrule
+\end{tabular}
+\caption{Taxonomy of Baseline Metrics and Test Harness Classifications}
+\label{tab:eval_tax}
+\end{table}
+
+\noindent\textbf{Critical Scientific Qualification:} The precision ($0.9280$), recall ($0.4598$), and F1 ($0.6149$) values are explicitly qualified as static reference literals instantiated within the prototype test harness. They demonstrate precision-first optimization ($\tau_{\text{link}} = 0.92$) to prevent catastrophic false-positive entity mergers in investigative workflows, but must not be cited as dynamic empirical measurements over unconstrained real-world distributions.
+
+\section{Formal Future Evaluation Protocols (Unperformed Experiments)}
+\label{sec:future_experiment_protocols}
+
+To provide a rigorous roadmap for empirical validation, we formalize twelve unperformed, peer-review-grade experimental protocols:
+
+\subsection{Protocol 1: Dynamic Multi-Seed Entity Resolution Benchmark}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} How do precision, recall, and F1 vary across varying random generator seeds $S \in \{S_1, \dots, S_{100}\}$?
+    \item \textbf{Hypothesis:} Precision will remain stably bounded above $0.90$ across all seeds due to the high $0.92$ linkage threshold, while recall will exhibit variance $\sigma^2 \le 0.05$.
+    \item \textbf{Variables:} Independent: Seed $S_k$; Dependent: Dynamic $P, R, F_1$; Controlled: Platform schemas, blocking parameters.
+    \item \textbf{Procedure:} Execute generator across 100 seeds; stream payloads into fresh ingestion pipelines; compute confusion matrices against \texttt{postgres-truth}.
+\end{itemize}
+
+\subsection{Protocol 2: Dual-Threshold Sweep and ROC/PR Curve Construction}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} What is the optimal Pareto boundary between auto-link threshold $\tau_{\text{high}}$ and review threshold $\tau_{\text{low}}$?
+    \item \textbf{Hypothesis:} Lowering $\tau_{\text{high}}$ below $0.85$ increases recall to $>70\%$ at the cost of precision degrading below $80\%$.
+    \item \textbf{Variables:} Independent: $\tau_{\text{high}} \in [0.70, 0.99]$ in increments of $0.01$; Dependent: Area Under the Precision-Recall Curve (AUPRC).
+    \item \textbf{Procedure:} Sweep thresholds across 1,000,000 candidate pairs; record classified confusion matrices.
+\end{itemize}
+
+\subsection{Protocol 3: Full Confusion Matrix Construction}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} What is the exact distribution of True Positives ($TP$), False Positives ($FP$), True Negatives ($TN$), and False Negatives ($FN$) across the entire $N=89,605$ account pool?
+    \item \textbf{Variables:} Dependent: $TP, FP, TN, FN$, Specificity, Negative Predictive Value ($NPV$).
+    \item \textbf{Procedure:} Perform exhaustive all-pairs comparison in an offline analytical environment to identify false negatives rejected by the blocking key.
+\end{itemize}
+
+\subsection{Protocol 4: Component Feature Ablation Study}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} What is the marginal contribution of each feature ($S_{\text{alias}}, S_{\text{disp}}, S_{\text{temp}}, S_{\text{act}}, S_{\text{cue}}$) to overall F1?
+    \item \textbf{Hypothesis:} Setting $w_{\text{alias}} = 0$ will cause the largest drop in precision ($>40\%$), confirming alias similarity as the primary discriminator.
+    \item \textbf{Procedure:} Systematically set individual feature weights to $0.0$, re-normalizing remaining weights, and evaluate against ground truth.
+\end{itemize}
+
+\subsection{Protocol 5: Blocking-Key Effectiveness and Reduction Ratio}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} What is the exact Reduction Ratio ($RR$) and Pairs Completeness ($PC$) of the 3-character prefix blocking strategy?
+    \item \textbf{Metrics:} $RR = 1 - \frac{|\mathcal{C}|}{|\mathcal{R} \times \mathcal{R}|}$, $PC = \frac{|\mathcal{C} \cap \mathcal{M}|}{|\mathcal{M}|}$.
+    \item \textbf{Procedure:} Measure candidate pair cardinality $|\mathcal{C}|$ vs. total true matches $|\mathcal{M}|$ across varying prefix lengths $\ell \in \{2, 3, 4, 5\}$.
+\end{itemize}
+
+\subsection{Protocol 6: Noise and Adversarial Handle Mutation Robustness}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} At what character mutation rate $\mu \in [0.0, 0.5]$ does Jaro-Winkler string similarity fail to link cross-platform accounts?
+    \item \textbf{Procedure:} Introduce synthetic character insertions, deletions, transpositions, and Leet-speak homoglyphs into generator Phase 10.
+\end{itemize}
+
+\subsection{Protocol 7: In-Memory Graph Expansion Scaling}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} How do query latency and memory scale as active graph vertex count scales from $N=10^3$ to $N=10^6$?
+    \item \textbf{Metrics:} P50, P95, P99 traversal latency (ms), heap memory usage (MB).
+    \item \textbf{Procedure:} Benchmark \texttt{queryGraph()} with depth $d \in \{1, 2, 3, 4\}$ on synthetic graphs of varying density.
+\end{itemize}
+
+\subsection{Protocol 8: Runtime Profiling and Resource Footprint}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} What are the CPU, memory, and I/O bottlenecks across the 14 container services under sustained ingestion of 1,000 records/sec?
+    \item \textbf{Procedure:} Run Prometheus/cAdvisor profiling during continuous simulated background activity.
+\end{itemize}
+
+\subsection{Protocol 9: RAG Prompt Injection Adversarial Benchmark}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} What percentage of semantic indirect prompt injection payloads bypass the 4-rule regex sanitization filter?
+    \item \textbf{Procedure:} Execute 500 automated prompt injection test cases from the BIPIA benchmark against the RAG assistant.
+\end{itemize}
+
+\subsection{Protocol 10: Human-in-the-Loop Analyst Evaluation}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} Does the review queue ($0.70 \le S < 0.92$) presented in Vzeya improve human investigator triage speed and attribution accuracy?
+    \item \textbf{Procedure:} Conduct a randomized user study with 20 professional security analysts comparing Vzeya against a baseline relational spreadsheet.
+\end{itemize}
+
+\subsection{Protocol 11: Longitudinal 12-Month Temporal Robustness}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} How does the linear 30-day temporal decay model affect long-dormant threat actor re-identification over a 365-day timeline?
+    \item \textbf{Procedure:} Simulate actor reactivation after 60, 90, 180, and 360 days of inactivity; record recall degradation.
+\end{itemize}
+
+\subsection{Protocol 12: Distributed BFT WAN Transport Evaluation}
+\begin{itemize}[noitemsep]
+    \item \textbf{Research Question:} How does WolverineDB 4-of-5 BFT consensus perform over a physical 5-node geographically distributed cloud network with simulated $100\text{ms}$ packet latency and $5\%$ packet loss?
+    \item \textbf{Procedure:} Replace \texttt{DirectMemoryNetworkTransport} with a real TCP/gRPC transport layer across multi-region Kubernetes nodes.
+\end{itemize}
+
+\section{Research Significance}
+\label{sec:eval_significance}
+
+By formalizing the five evidentiary tiers, qualifying the static nature of baseline literals, and providing twelve unperformed experimental protocols, this chapter establishes a transparent, reproducible benchmark framework for multi-source intelligence evaluation \cite{nowok2016synthpop, christen2012data}.

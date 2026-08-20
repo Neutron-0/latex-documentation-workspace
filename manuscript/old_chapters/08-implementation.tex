@@ -1,0 +1,167 @@
+\chapter{Implementation}
+\label{ch:implementation}
+
+The theoretical methodologies detailed in \Cref{ch:analytical-methodology} are realized via a unified set of modular codebases. This chapter maps the conceptual algorithms directly to the executed software layers, explicitly differentiating between functional components, simulated boundaries, and purely presentational elements.
+
+\section{Repository Architecture}
+\label{sec:impl-repository}
+The project architecture spans five primary directory structures, each governing a distinct functional domain, following microservices patterns described by Newman \cite{newman2021building}:
+\begin{itemize}
+    \item \texttt{wolverine-sih/}: The monolithic Node.js backend encompassing the API, parsers, and analytical daemons.
+    \item \texttt{wolverine-db/}: A standalone library containing cryptographic middleware and database adapters.
+    \item \texttt{generator/}: The Python-based deterministic synthetic population engine.
+    \item \texttt{Vzeya/}: The Next.js/Three.js presentation frontend.
+    \item \texttt{Analyst UI/}: The React/Vite functional frontend.
+\end{itemize}
+
+\section{Backend Modules (\texttt{wolverine-sih})}
+\label{sec:impl-backend}
+The core intelligence logic is isolated within specific source files in the \texttt{src/} directory. \Cref{tab:backend-modules} outlines their primary roles with accurate module paths.
+
+\begin{table}[h]
+\centering
+\resizebox{\textwidth}{!}{
+\begin{tabular}{p{0.35\textwidth} p{0.15\textwidth} p{0.15\textwidth} p{0.35\textwidth}}
+\toprule
+\textbf{Source File} & \textbf{Inputs} & \textbf{Outputs} & \textbf{Primary Purpose} \\
+\midrule
+\texttt{wolverine/src/api/server.ts} & HTTP Requests & HTTP Responses & Express REST API with RBAC middleware. \\
+\texttt{wolverine/src/pipeline/processor.ts} & Raw Payloads & Normalized Events & Normalization and deduplication pipeline. \\
+\texttt{wolverine/src/normalizer/parsers.ts} & Raw Byte Data & CanonicalRecord[] & Site-specific parsers (AtlasParser, BriarParser, CinderParser, DriftParser, EmberParser). \\
+\texttt{wolverine/src/resolver/entity\_resolver.ts} & CanonicalRecord & LinkageScore[] & Jaro-Winkler scoring and blocking. \\
+\texttt{wolverine/src/graph/projector.ts} & LinkageScore[] & Graph (Nodes, Edges) & BFS graph projection. \\
+\texttt{wolverine/src/ai/rag.ts} & Analyst Query & Synthesized String & RAG pipeline with sanitization. \\
+\bottomrule
+\end{tabular}
+}
+\caption{Backend Core Module Implementation Mapping}
+\label{tab:backend-modules}
+\end{table}
+
+\section{Role-Based Access Control}
+\label{sec:impl-rbac}
+To secure the API against unauthorized internal usage, Wolverine implements a strictly tiered Role-Based Access Control (RBAC) system. The Express REST API relies on a custom header, \texttt{X-Wolverine-Role}, which identifies the privilege level of incoming requests. The middleware functions, specifically \texttt{getRole()} to extract the header and \texttt{requireRole()} to enforce the privilege level, manage authorization for protected routes. Note: this is NOT cryptographic auth (no JWT/OAuth); it operates purely as a routing mechanism within the internal network structure.
+
+The system enforces five distinct roles: \texttt{admin}, \texttt{operator}, \texttt{researcher}, \texttt{reviewer}, and \texttt{public\_demo}. \Cref{tab:rbac-permissions} maps these roles to their respective endpoint permissions.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{0.25\textwidth} p{0.65\textwidth}}
+\toprule
+\textbf{Role} & \textbf{Endpoint Permissions} \\
+\midrule
+\texttt{admin} & All read/write routes, configuration updates, and destructive operations. \\
+\texttt{operator} & Pipeline trigger endpoints and collection runs management. \\
+\texttt{researcher} & Graph queries, resolution candidate modifications, and RAG endpoints. \\
+\texttt{reviewer} & Read-only access to specific finalized datasets. \\
+\texttt{public\_demo} & Rate-limited access to anonymized public endpoints. \\
+\bottomrule
+\end{tabular}
+\caption{RBAC Role to Endpoint Mapping}
+\label{tab:rbac-permissions}
+\end{table}
+
+\section{API Routes Configuration}
+\label{sec:impl-api-routes}
+The primary routing logic in \texttt{wolverine/src/api/server.ts} exposes several crucial endpoints. Instead of generic monolithic endpoints, the API defines specific RESTful pathways for operational interactions:
+\begin{itemize}
+    \item \textbf{Health and Metrics:} \texttt{GET /health/live}, \texttt{GET /health/ready}, and \texttt{GET /metrics} for Kubernetes liveness/readiness probes and Prometheus scraping.
+    \item \textbf{Data Ingestion:} \texttt{POST /v1/collection-runs} to trigger scrapes, and \texttt{GET /v1/collection-runs/:id} to check status.
+    \item \textbf{Record Inspection:} \texttt{GET /v1/records} for list views and \texttt{GET /v1/records/:id} for detailed atomic inspection.
+    \item \textbf{Analytics:} \texttt{GET /v1/graph/query} (accepting \texttt{maxDepth} and \texttt{limit} query parameters) for network traversal, and \texttt{POST /v1/analysis/questions} for triggering RAG queries.
+    \item \textbf{Entity Resolution:} \texttt{GET /v1/resolution-candidates} to retrieve potential linkages, and \texttt{PATCH /v1/resolution-candidates/:id} to manually confirm or reject heuristics.
+\end{itemize}
+
+\section{Pipeline Processor}
+\label{sec:impl-pipeline}
+The \texttt{wolverine/src/pipeline/processor.ts} module acts as the core message-routing spine. Its primary entry point, \texttt{PipelineProcessor.processCapture()}, ingests raw payload buffers and orchestrates the subsequent processing stages. It immediately invokes a \texttt{cryptoHash()} function to compute a SHA-256 fingerprint for deduplication on incoming payloads. 
+
+Post-deduplication, the pipeline routes the payload to the appropriate site-specific parser defined in \texttt{parsers.ts}. Upon completion, the pipeline emits Outbox events such as \texttt{RecordNormalizedEvent}. If a parser fails, error handling logic isolates the payload, emitting a \texttt{RecordQuarantinedEvent} rather than dropping the record, allowing for subsequent manual intervention and quarantining failed parses.
+
+\section{Entity Resolver Implementation}
+\label{sec:impl-resolver}
+The \texttt{wolverine/src/resolver/entity\_resolver.ts} daemon instantiates the formulas from \Cref{ch:analytical-methodology}. 
+
+\subsection{Blocking Strategy}
+\label{sec:impl-blocking}
+To reduce the $O(n^2)$ comparison space, the blocking logic aggregates records by registration week and a 3-character phonetic or structural prefix.
+\begin{lstlisting}[language=TypeScript, caption={Blocking Key Generation}, label={lst:blocking-key}]
+function generateBlockingKey(record: CanonicalRecord): string {
+    const prefix = record.handle.slice(0, 3).toLowerCase();
+    const week = getRegistrationWeek(record.timestamp);
+    return `${prefix}-${week}`;
+}
+\end{lstlisting}
+\textit{Illustrative synthetic example — not an empirical benchmark.}
+
+\subsection{Decision Logic}
+\label{sec:impl-decision}
+The \texttt{evaluatePair()} function aggregates weights computed by an internal Jaro-Winkler string similarity heuristic.
+\begin{lstlisting}[language=TypeScript, caption={Evaluate Pair Decision Logic}, label={lst:evaluate-pair}]
+function evaluatePair(a: CanonicalRecord, b: CanonicalRecord): LinkageScore {
+    const score = computeHeuristics(a, b);
+    if (score >= 0.92) {
+        return { status: 'CONFIRMED', confidence: score };
+    } else if (score >= 0.75) {
+        return { status: 'CANDIDATE', confidence: score };
+    }
+    return { status: 'REJECTED', confidence: score };
+}
+\end{lstlisting}
+\textit{Illustrative synthetic example — not an empirical benchmark.}
+
+\section{Graph Projector Implementation}
+\label{sec:impl-projector}
+Implemented in \texttt{wolverine/src/graph/projector.ts}, the bounded BFS utilizes native ES6 structures. The queue is a standard array mutated via \texttt{push()} and \texttt{shift()}, while the visited list is a \texttt{Set<string>}. The resource limits are rigidly enforced by explicit conditional breaks (\texttt{if (depth > 4 || visited.size > 500) break;}), guaranteeing safe execution within Node.js memory limits.
+
+\section{RAG Implementation}
+\label{sec:impl-rag}
+The \texttt{wolverine/src/ai/rag.ts} module uses native RegExp to sanitize inputs. After applying sanitization rules, it wraps the context in a template string and interacts with Ollama.
+\begin{lstlisting}[language=TypeScript, caption={RAG Sanitization Pipeline Signatures}, label={lst:rag-sanitization}]
+function sanitizePrompt(rawInput: string): string;
+function stripPII(context: string): string;
+function enforceBoundingBox(query: string, maxTokens: number): string;
+\end{lstlisting}
+\textit{Illustrative synthetic example — not an empirical benchmark.}
+
+It wraps its \texttt{fetch} call in a strict \texttt{Promise.race} against a \texttt{setTimeout}. If the LLM exceeds 15 seconds, the promise rejects, triggering the deterministic fallback string to ensure the frontend never hangs.
+
+\section{WolverineDB Implementation}
+\label{sec:impl-wolverinedb}
+The WolverineDB implementation is documented in \Cref{ch:wolverinedb}.
+
+\section{Frontend Implementation}
+\label{sec:impl-frontend}
+The frontend systems are documented in \Cref{ch:frontend-systems}.
+
+\section{Infrastructure and Configuration}
+\label{sec:impl-infra}
+The system's container topology is defined in a centralized \texttt{docker-compose.yml} file. It leverages Docker healthchecks to enforce startup ordering via the \texttt{depends\_on} directive, ensuring databases are ready before API or daemon containers boot. Data persistence is managed through robust volume mappings, protecting PostgreSQL and graph databases from ephemeral container destruction. All sensitive and environment-specific configuration variables are documented in \texttt{.env.example} to enable secure, injected deployment without hardcoding credentials into the source repository.
+
+\section{Testing}
+\label{sec:impl-testing}
+Testing spans multiple domains but reveals significant coverage gaps. The Python \texttt{generator} relies on comprehensive unit tests that verify mathematical determinism, ensuring that identical seeds produce identical synthetic populations. In the database layer, WolverineDB is validated by over 219 \texttt{vitest} cases, heavily covering fuzzing, concurrent Byzantine Fault Tolerance (BFT) constraints, catastrophic recovery scenarios, and DB adapter correctness. The backend utilizes Prisma schema validation to ensure relational structural integrity. Network safety testing is automated via \texttt{test-tor-safety.sh}, a shell script utilizing a cURL suite against the Tor gateway. 
+
+However, a critical omission exists: there is no end-to-end integration test proving full pipeline execution from raw ingestion through graph projection to final RAG synthesis. This missing experiment (Class E evidence) forces reliance on disjoint unit tests rather than functional holistic verification.
+
+\section{Failure Handling}
+\label{sec:impl-failure-handling}
+\begin{table}[h]
+\centering
+\begin{tabular}{p{0.25\textwidth} p{0.25\textwidth} p{0.25\textwidth} p{0.15\textwidth}}
+\toprule
+\textbf{Component} & \textbf{Failure Mode} & \textbf{Current Response} & \textbf{Residual Limitation} \\
+\midrule
+\texttt{parsers.ts} & Unknown schema field. & Log exception, quarantine. & Payload unanalyzed. \\
+\texttt{projector.ts} & Graph size $\ge 500$. & Truncate execution. & Silent data loss (depth). \\
+\texttt{rag.ts} & LLM timeout / crash. & Return fallback string. & Narrative insight lost. \\
+\texttt{processor.ts} & Duplicate payload. & Discard via SHA-256. & None. \\
+\bottomrule
+\end{tabular}
+\caption{Implementation Failure Mode Matrix}
+\label{tab:failure-matrix}
+\end{table}
+
+\section{Implementation Trade-offs}
+\label{sec:impl-tradeoffs}
+The implementation is highly modularized via TypeScript interfaces, yet constrained by architectural limitations. Using an in-memory BFS string comparison engine rather than a dedicated distributed graph processing unit minimizes operational overhead but caps deep network discovery. Furthermore, missing end-to-end automated pipelines mean structural assertions lack empirical validation under sustained loads.

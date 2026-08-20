@@ -1,0 +1,55 @@
+\chapter{Tor Gateway Security Controls}
+\label{app:tor-gateway}
+
+This appendix details the strict ingress routing, rate limiting, and request sanitization configured on the Tor-facing gateway used to safely expose specific read-only capabilities.
+
+\section{Gateway Architecture}
+The gateway relies on an Nginx Alpine container optimized for minimal surface area. It acts strictly with read-only proxy capabilities and is positioned within a dedicated DMZ network layer, isolating the internal architecture from direct external exposure.
+
+\section{HTTP Method Restrictions}
+To enforce immutability, only HTTP \texttt{GET} and \texttt{HEAD} methods are allowed through the gateway. Any other methods (e.g., \texttt{POST}, \texttt{PUT}, \texttt{DELETE}) immediately return a \texttt{405 Method Not Allowed} response. This globally prevents any database mutation or state changes via public ingress.
+
+\section{Rate Limiting}
+Traffic shaping policies are tightly enforced at the Nginx edge:
+\begin{itemize}
+    \item \textbf{Rate}: Capped at 10 requests per second per client IP address.
+    \item \textbf{Burst}: Allowed burst size of 20 to accommodate brief natural spikes without immediate punitive dropping.
+    \item \textbf{Enforcement}: Excess requests automatically receive a \texttt{429 Too Many Requests} status code.
+\end{itemize}
+
+\section{Administrative Endpoint Blocking}
+Several internal and administrative routes are explicitly blacklisted at the gateway level. Requests to these paths are intercepted and denied before reaching any backend service:
+\begin{itemize}
+    \item \texttt{/metrics}: blocked (returns \texttt{403 Forbidden})
+    \item \texttt{/health/ready}: blocked
+    \item \texttt{/admin}: blocked
+    \item \texttt{/seed}: blocked
+\end{itemize}
+These endpoints exist strictly for internal instrumentation and automated provisioning.
+
+\section{Security Headers}
+Every outbound HTTP response dispatched by the proxy is instrumented with hardening headers:
+\begin{itemize}
+    \item \texttt{Content-Security-Policy}: Enforces a highly restrictive policy minimizing client-side script execution.
+    \item \texttt{X-Frame-Options: DENY}: Defends against clickjacking by preventing iframe embedding.
+    \item \texttt{X-Content-Type-Options: nosniff}: Instructs browsers to strictly honor the declared MIME type, mitigating sniffing attacks.
+\end{itemize}
+
+\section{RBAC Header Injection}
+To integrate with backend identity verification, the proxy performs role-based header injection:
+\begin{itemize}
+    \item Public routes inject \texttt{X-Wolverine-Role: "researcher"}.
+    \item Demonstration routes inject \texttt{X-Wolverine-Role: "public\_demo"}.
+\end{itemize}
+Both injected roles carry exclusively read-only permissions on the backend API layer, guaranteeing that even if a payload traverses the gateway, it lacks the authorization to modify records.
+
+\section{Upstream Configuration}
+The proxy establishes upstream \texttt{proxy\_pass} targets directly to the internal \texttt{wolverine-api} service, functioning as a reverse proxy that shields the backend from direct resolution.
+
+\section{Automated Security Testing}
+Gateway configuration integrity is validated via \texttt{scripts/test-tor-safety.sh}, which runs continuously as part of the integration pipeline. The script:
+\begin{itemize}
+    \item Executes a comprehensive cURL suite validating \texttt{403} and \texttt{405} responses on restricted paths.
+    \item Iteratively tests and verifies the rate limiting behavior and burst thresholds.
+    \item Actively confirms that all administrative endpoint blocking is functioning as defined.
+\end{itemize}

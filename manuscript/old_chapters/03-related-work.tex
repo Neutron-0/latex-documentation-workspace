@@ -1,0 +1,109 @@
+\chapter{Related Work and Research Context}
+\label{ch:related-work}
+
+Entity resolution, cross-platform intelligence analysis, and trustworthy analytical infrastructure draw from diverse theoretical and engineering domains. This chapter reviews the formal foundations underlying the Wolverine prototype, contextualizing its design choices within the established literature of probabilistic record linkage, string similarity metrics, graph traversal paradigms, synthetic population generation, cyber threat intelligence, container security, threat modeling, safe retrieval-augmented language models, and cryptographic data integrity.
+
+\section{Record Linkage and Entity Resolution}
+\label{sec:related-record-linkage}
+The challenge of identifying records that refer to the same real-world entity across disparate databases was formalized by Fellegi and Sunter~\cite{fellegi1969theory} in their foundational mathematical model for record linkage. Under the Fellegi-Sunter framework, candidate pairs from two distinct sets $A$ and $B$ are classified into matched pairs $M$ or unmatched pairs $U$ based on a comparison vector $\gamma = [\gamma_1, \gamma_2, \dots, \gamma_K]$ representing agreement or disagreement across $K$ observable attributes. 
+
+Elmagarmid et al.~\cite{elmagarmid2007duplicate} provide a comprehensive survey on duplicate detection, establishing that modern systems must move beyond exact matches to account for typographical errors, varying schemas, and missing data. Building on this, Getoor and Machanavajjhala~\cite{getoor2012entity} outline the open challenges in entity resolution (ER), emphasizing the need for scalable algorithms in big data environments. Christen~\cite{christen2012data} expands the Fellegi-Sunter framework to modern multi-source environments, highlighting the computational bottleneck of quadratic pair comparisons ($O(|A| \times |B|)$) and the necessity of blocking strategies. Wolverine adopts this probabilistic linkage philosophy, utilizing heuristic blocking on alias prefixes to reduce the search space prior to intensive scoring. 
+
+\section{Cross-Platform Identity Resolution}
+\label{sec:related-identity-resolution}
+In multi-platform intelligence ecosystems where global unique identifiers (such as national identity numbers or verified emails) are intentionally withheld or unavailable, entity resolution must rely on probabilistic matching of noisy, partial identifiers such as aliases, temporal registration windows, and localized behavioral cues. The literature has established that cross-platform identity linking poses unique challenges due to sparse data and deliberate obfuscation by adversarial actors.
+
+Narayanan and Shmatikov~\cite{narayanan2008robust} demonstrated the feasibility of de-anonymization techniques against sparse, high-dimensional datasets, showing how minimal topological cues can compromise supposedly anonymous networks. In the context of malicious networks, Soska and Christin~\cite{soska2015measuring} mapped the evolution of dark marketplaces, illustrating how user identities and reputations persist across distinct platforms despite efforts to remain anonymous. While exact identifiers allow trivial joining, approximate matching across such ecosystems requires complex distance functions. The Wolverine prototype deliberately avoids highly sophisticated, computationally intensive deep learning-based embeddings, opting instead for a binary prefix matching heuristic combined with Jaro-Winkler alias similarity and exponential temporal decay. This decision prioritizes rapid, deterministic execution in a prototype environment.
+
+\section{String Similarity Metrics}
+\label{sec:related-string-similarity}
+A core component of any entity resolution engine is the quantitative measurement of string similarity. The literature provides a rich taxonomy of comparison functions. Cohen et al.~\cite{cohen2003comparison} offer a seminal comparative evaluation of string matching metrics, dividing them into edit-distance based, token-based, and hybrid approaches. Navarro~\cite{navarro2001guided} provides a comprehensive guide to approximate string matching, detailing the algorithmic complexity of various distance measures.
+
+Common edit-distance metrics include the Levenshtein distance, which calculates the minimum number of single-character edits required to transform one string into another. Alternatively, token-based metrics like TF-IDF or character $n$-grams excel in matching longer text blocks but perform poorly on short, contiguous aliases. Jaro distance, and its extension the Jaro-Winkler similarity, were specifically designed for short string matching such as human names and aliases. Jaro-Winkler increases the similarity score for strings that match from the beginning for a set prefix length, reflecting the empirical observation that typographic errors are less likely to occur at the start of a name. After evaluating the trade-offs outlined by Cohen et al., Wolverine implements the Jaro-Winkler metric for alias comparison, as it provides an optimal balance between accuracy for short strings and computational efficiency required for rapid pairwise scoring.
+
+\section{Graph-Based Intelligence Analysis}
+\label{sec:related-graph-traversal}
+Projecting multi-entity interactions into relational graphs enables analysts to discover non-obvious associations through multi-hop path traversals. Newman~\cite{newman2003structure} provides foundational insights into the structure and function of complex networks, establishing how topological properties reflect underlying behavioral communities. In enterprise production systems, graph query engines often rely on native, disk-backed graph databases (e.g., Neo4j) or execute recursive Common Table Expressions (CTEs) over relational SQL adjacency tables to map these communities.
+
+The algorithms driving these traversals, such as Breadth-First Search (BFS), are cornerstones of computer science, formalized in texts like Cormen et al.~\cite{cormen2009introduction}. Wolverine utilizes Neo4j for storage but deliberately executes real-time traversal via an in-memory BFS over explicit node-edge adjacency lists. As established in graph processing literature, in-memory traversals eliminate SQL/Cypher query overhead and complex database indexing during high-throughput execution. However, this architectural choice imposes strict memory ceilings that inherently bound the maximum traversal depth ($d \le 4$) and active graph scale ($N \le 500$), marking a definitive trade-off between prototype speed and production scalability.
+
+\section{Cyber Threat Intelligence}
+\label{sec:related-cti}
+The aggregation and analysis of indicators of compromise (IoCs) and adversary behaviors form the domain of Cyber Threat Intelligence (CTI). Liao et al.~\cite{liao2016acing} propose techniques for automatically extracting CTI from unstructured text, highlighting the challenges of structuring threat data for automated analysis. To standardize the description of adversary tactics and techniques, the MITRE ATT\&CK framework~\cite{mitre2024attack} has become the industry-standard taxonomy.
+
+Wolverine fits within the CTI landscape as a rapid prototyping environment for testing intelligence workflows. Rather than focusing on parsing unstructured threat reports, Wolverine simulates the structured outputs of a mature CTI pipeline—where identities, aliases, and platforms are already extracted—and focuses on the downstream analytical processes of entity resolution and graph traversal.
+
+\section{Synthetic Data and Ground Truth}
+\label{sec:related-synthetic-data}
+Evaluating cross-platform entity resolution in real-world threat intelligence settings is severely constrained by ethical, legal, and operational boundaries. Handling genuine Personally Identifiable Information (PII) introduces significant privacy violations and regulatory compliance liabilities. Furthermore, real-world data lacks verifiable, objective ground truth.
+
+Modern research leverages deterministic synthetic population generators to overcome this evaluation barrier. Nowok et al.~\cite{nowok2016synthpop} introduce the synthpop package, demonstrating how synthetic data can mirror the statistical properties of real populations while preserving confidentiality. By generating synthetic personas according to predefined statistical distributions and explicitly tracking their assignments in an isolated ground-truth registry, researchers can objectively measure precision, recall, and false-positive rates without compromising real-world privacy. However, synthetic evaluation is limited by domain shift; synthetic models cannot perfectly emulate the irrational unpredictability of human adversaries, meaning that metrics derived from synthetic environments represent an upper bound on real-world performance. Wolverine embraces this synthetic paradigm entirely, explicitly isolating the generation logic from the inference engine to prove algorithmic mechanics safely.
+
+\section{Retrieval-Augmented Generation and Prompt Security}
+\label{sec:related-rag-safety}
+Retrieval-Augmented Generation (RAG), as formalized by Lewis et al.~\cite{lewis2020retrieval}, combines parametric neural generation with non-parametric retrieval from external knowledge repositories. Gao et al.~\cite{gao2024retrieval} survey the rapid evolution of RAG systems, noting their utility in mitigating LLM hallucinations. In intelligence workflows, RAG allows Large Language Models to synthesize complex case dossiers grounded strictly in captured evidential records rather than relying on ungrounded internal model weights.
+
+However, ingesting untrusted text from adversarial web sources introduces severe prompt injection vulnerabilities~\cite{perez2022ignore}. Greshake et al.~\cite{greshake2023not} demonstrate that indirect prompt injections—where malicious instructions are hidden in retrieved web pages—can compromise downstream LLM agents. Formalizing these threats, Liu et al.~\cite{liu2024formalizing} provide a taxonomy of prompt injection attacks. Safe analytical systems must enforce strict multi-stage input sanitization, length bounding, control character elimination, and deterministic fallback heuristics. Wolverine implements a 4-rule regex sanitization pipeline as a baseline defense-in-depth measure, though it must be acknowledged that regex alone cannot definitively neutralize advanced adversarial prompt injection.
+
+\section{Cryptographic Integrity and Distributed Trust}
+\label{sec:related-cryptographic-trust}
+In sensitive forensic and investigative environments, maintaining the evidentiary integrity of analytical findings is paramount. The foundational challenge of consensus in distributed networks was defined by Lamport et al.~\cite{lamport1982byzantine} through the Byzantine Generals Problem. Building on this, distributed consensus protocols, such as Practical Byzantine Fault Tolerance (PBFT) by Castro and Liskov~\cite{castro2002practical}, establish theoretical foundations for multi-party agreement across nodes even in the presence of malicious or arbitrary failures.
+
+For data integrity, Merkle trees~\cite{merkle1987digital} provide cryptographic proof of state inclusion and tamper-evident append-only logging through recursive cryptographic hashing. Nakamoto~\cite{nakamoto2008bitcoin} famously applied Merkle chains to achieve decentralized consensus in Bitcoin. Certificate Transparency logs~\cite{rfc6962} demonstrate the production viability of these structures for public auditability. Wolverine relies on robust digital signatures, implementing Ed25519~\cite{rfc8032} for verifiable node communication. While Wolverine incorporates Merkle tree state hashing natively, its BFT consensus network is currently realized as a simulated in-process transport, demonstrating cryptographic feasibility without requiring a fully decentralized physical deployment.
+
+\section{Container Security and Microservices}
+\label{sec:related-container-security}
+Modern analytical infrastructure relies heavily on containerization to ensure consistent, isolated execution environments. Newman~\cite{newman2021building} outlines the architectural principles of microservices, emphasizing independent deployability and service isolation. As analytical platforms ingest potentially hostile data, isolating the components becomes a security imperative.
+
+Sultan et al.~\cite{sultan2019container} survey container security issues, noting that while containers offer less isolation than full virtual machines, their network namespaces and cgroups provide critical defense layers. Wolverine leverages Docker network isolation to explicitly segregate the \texttt{ThreatGen} synthetic data generator from the \texttt{InferenceEngine}, guaranteeing that the analysis components cannot directly access the ground truth database, thereby enforcing a strict zero-knowledge analytical boundary.
+
+\section{Threat Modeling}
+\label{sec:related-threat-modeling}
+To systematically identify and mitigate vulnerabilities in the analytical platform, formal threat modeling methodologies are required. Shostack~\cite{shostack2014threat} popularized the STRIDE methodology (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege) as a structured approach to analyzing software systems for security flaws. Complementary to software-centric models, NIST Special Publication 800-30~\cite{nist2012guide} provides a comprehensive guide for conducting risk assessments in federal information systems.
+
+Wolverine incorporates these principles by explicitly modeling the ingestion of adversarial data as a threat vector, leading to the implementation of the regex sanitization pipeline to mitigate Tampering and Information Disclosure risks associated with prompt injection attacks.
+
+\section{Tor and Onion Architecture}
+\label{sec:related-tor}
+The necessity for secure, anonymous communication in adversarial environments is addressed by the Tor network's onion routing protocol~\cite{dingledine2004tor}. Tor encrypts traffic in nested layers, routing it through a decentralized circuit to obscure the origin and destination of the data. Wolverine's architecture conceptually supports data collection from such anonymous platforms via its DMZ proxy layer, though the prototype itself operates strictly on simulated, generated data rather than live Tor traffic.
+
+\section{Research vs Engineering Gap}
+\label{sec:related-gaps}
+Existing literature provides robust, mathematically proven solutions for isolated components: statistical record linkage, string comparison metrics, synthetic data simulation, cryptographic hashing, and distributed consensus. The Wolverine SIH prototype does not claim to invent fundamentally novel algorithms in these individual theoretical spaces. 
+
+Instead, the project addresses a critical \textit{engineering and systems-integration gap}. It unifies these disparate layers into an end-to-end, zero-knowledge testbed where a synthetic ecosystem generates heterogeneous traffic, an automated entity resolution engine probabilistically links identities, an air-gapped Truth Vault maintains objective ground truth, and a sanitized RAG assistant synthesizes case narratives. By integrating these components into a cohesive microservice architecture, Wolverine demonstrates the practical viability of combining academic rigor with rapid engineering deployment.
+
+\section{Comparative Synthesis}
+\label{sec:related-comparative-synthesis}
+To clarify Wolverine's specific technical positioning, \Cref{tab:literature-comparison} summarizes how established methods compare to the project's chosen implementations across the expanded domain space.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{0.20\textwidth} p{0.35\textwidth} p{0.35\textwidth}}
+\toprule
+\textbf{Domain} & \textbf{Established Literature} & \textbf{Wolverine Implementation} \\
+\midrule
+Record Linkage & Fellegi-Sunter statistical weighting~\cite{fellegi1969theory, elmagarmid2007duplicate} & Hardcoded heuristic thresholds \\
+\addlinespace
+String Similarity & TF-IDF, Edit Distances~\cite{cohen2003comparison} & Jaro-Winkler alias similarity \\
+\addlinespace
+Graph Traversal & Recursive SQL / Native DB~\cite{newman2003structure} & Bounded, in-memory BFS ($d \le 4$) \\
+\addlinespace
+Ground Truth & Manual verification & Isolated synthetic Truth Vault \\
+\addlinespace
+LLM Safety & Fine-tuned alignment~\cite{liu2024formalizing} & 4-rule Regex sanitization \\
+\addlinespace
+Cryptographic State & Multi-node Distributed Ledger~\cite{castro2002practical} & In-process simulated network \\
+\addlinespace
+CTI & Unstructured NLP extraction~\cite{liao2016acing} & Structured synthetic event stream \\
+\addlinespace
+Microservices & Distributed orchestration~\cite{newman2021building} & Docker isolated local containers \\
+\addlinespace
+Threat Modeling & STRIDE / NIST SP 800-30~\cite{shostack2014threat} & Applied to adversarial RAG inputs \\
+\addlinespace
+Cross-Platform ID & Topological de-anonymization~\cite{narayanan2008robust} & Prefix blocking \& temporal decay \\
+\bottomrule
+\end{tabular}
+\caption{Comparative Synthesis of Literature vs. Implementation}
+\label{tab:literature-comparison}
+\end{table}

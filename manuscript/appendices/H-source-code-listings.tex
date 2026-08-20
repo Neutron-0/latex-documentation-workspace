@@ -1,0 +1,147 @@
+\chapter{Selected Source Code Listings}
+\label{app:source-code-listings}
+
+This appendix provides critical source code listings that implement the core mathematical and algorithmic mechanisms discussed throughout the manuscript. The listings are derived from the Wolverine ecosystem (\texttt{wolverine-sih}, \texttt{wolverine-db}) and the visual interaction layer (\texttt{Vzeya}). 
+
+\section{Graph Projection via Bounded Breadth-First Search}
+\label{sec:code-projector}
+
+As discussed in the architectural chapters, the Wolverine system explicitly avoids database-level recursive mechanisms, such as PostgreSQL recursive Common Table Expressions (CTEs), for graph projection. Instead, it relies on a highly optimized, strictly in-memory Bounded Breadth-First Search (BFS) implemented in \texttt{projector.ts}. This approach allows for tighter control over traversal depths and memory consumption during real-time network analytics.
+
+\begin{lstlisting}[language=TypeScript, caption={In-memory Bounded BFS for graph projection (\texttt{projector.ts})}, label={lst:projector}]
+export class GraphProjector {
+  /**
+   * Executes an in-memory Bounded BFS to project the local neighborhood
+   * of a given entity without relying on database recursive CTEs.
+   */
+  public projectNeighborhood(
+    startNodeId: string,
+    maxDepth: number = 3
+  ): Graph {
+    const visited = new Set<string>();
+    const queue: Array<{ id: string; depth: number }> = [];
+    const resultGraph = new Graph();
+
+    queue.push({ id: startNodeId, depth: 0 });
+    visited.add(startNodeId);
+
+    while (queue.length > 0) {
+      const { id, depth } = queue.shift()!;
+      const node = this.nodeCache.get(id);
+
+      if (node) {
+        resultGraph.addNode(node);
+      }
+
+      if (depth < maxDepth) {
+        const edges = this.edgeCache.getEdges(id);
+        for (const edge of edges) {
+          resultGraph.addEdge(edge);
+          const neighborId = edge.target === id ? edge.source : edge.target;
+
+          if (!visited.has(neighborId)) {
+            visited.add(neighborId);
+            queue.push({ id: neighborId, depth: depth + 1 });
+          }
+        }
+      }
+    }
+
+    return resultGraph;
+  }
+}
+\end{lstlisting}
+
+\section{Entity Resolution and Linear Temporal Decay}
+\label{sec:code-entity-resolver}
+
+The \texttt{entity\_resolver.ts} module demonstrates the implementation of the probabilistic matching algorithms utilized within the Wolverine ecosystem. Notably, it incorporates a linear 30-day temporal decay function to adjust confidence scores, explicitly eschewing exponential decay models to guarantee mathematical predictability over the resolution lifecycle. Furthermore, the system enforces strict deterministic thresholds: a strong match threshold of 0.92 and a candidate threshold of 0.70.
+
+\begin{lstlisting}[language=TypeScript, caption={Entity resolution logic with linear temporal decay and strict thresholds (\texttt{entity\_resolver.ts})}, label={lst:entity-resolver}]
+export class EntityResolver {
+  private static readonly STRONG_MATCH_THRESHOLD = 0.92;
+  private static readonly CANDIDATE_THRESHOLD = 0.70;
+  private static readonly MAX_DECAY_DAYS = 30;
+
+  /**
+   * Calculates the final confidence score using a linear 30-day temporal decay.
+   * Exponential decay is explicitly avoided to maintain predictable 
+   * auditability in resolution scores.
+   */
+  private applyLinearTemporalDecay(
+    baseScore: number, 
+    lastSeenDate: Date, 
+    currentDate: Date
+  ): number {
+    const diffTime = Math.abs(currentDate.getTime() - lastSeenDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays >= EntityResolver.MAX_DECAY_DAYS) {
+      return 0.0; // Complete decay after 30 days
+    }
+    
+    // Linear decay penalty
+    const decayFactor = 1.0 - (diffDays / EntityResolver.MAX_DECAY_DAYS);
+    return baseScore * decayFactor;
+  }
+
+  public resolveEntities(entityA: Entity, entityB: Entity): ResolutionResult {
+    const baseScore = this.calculateSimilarity(entityA, entityB);
+    const finalScore = this.applyLinearTemporalDecay(
+      baseScore, 
+      entityB.lastSeen, 
+      new Date()
+    );
+
+    if (finalScore >= EntityResolver.STRONG_MATCH_THRESHOLD) {
+      return { status: 'MERGE', confidence: finalScore };
+    } else if (finalScore >= EntityResolver.CANDIDATE_THRESHOLD) {
+      return { status: 'REVIEW', confidence: finalScore };
+    }
+    
+    return { status: 'REJECT', confidence: finalScore };
+  }
+}
+\end{lstlisting}
+
+\section{CSS-Based CRT Post-Processing}
+\label{sec:code-crt}
+
+Within the Vzeya visual interaction layer, the Cathode-Ray Tube (CRT) terminal effect is achieved purely through Cascading Style Sheets (CSS). The implementation actively avoids computationally expensive WebGL GLSL shaders. Instead, it utilizes the \texttt{repeating-linear-gradient} property to synthesize scanlines, ensuring lightweight cross-browser compatibility and significantly lower computational overhead.
+
+\begin{lstlisting}[language=JavaScript, caption={CSS-based scanline generation for CRT effects (\texttt{CRTPostProcessing.tsx})}, label={lst:crt-css}]
+import React from 'react';
+import './CRTStyles.css';
+
+/**
+ * Renders a CRT overlay using CSS repeating-linear-gradient.
+ * WebGL/GLSL shaders are completely avoided in Vzeya for this effect.
+ */
+export const CRTPostProcessing: React.FC<{ children: React.ReactNode }> = ({ 
+  children 
+}) => {
+  return (
+    <div className="crt-container">
+      <div className="crt-scanlines" style={{
+        background: `
+          linear-gradient(
+            rgba(18, 16, 16, 0) 50%, 
+            rgba(0, 0, 0, 0.25) 50%
+          ), 
+          repeating-linear-gradient(
+            90deg, 
+            rgba(255, 0, 0, 0.06), 
+            rgba(0, 255, 0, 0.02), 
+            rgba(0, 0, 255, 0.06) 3px
+          )`
+        ,
+        backgroundSize: '100% 2px, 3px 100%',
+        pointerEvents: 'none'
+      }} />
+      <div className="crt-content">
+        {children}
+      </div>
+    </div>
+  );
+};
+\end{lstlisting}

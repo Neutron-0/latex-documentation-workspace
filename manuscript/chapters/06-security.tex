@@ -1,0 +1,52 @@
+\chapter{Security, Ethics, and Trust Boundaries}
+\label{ch:security}
+
+\section{Threat Modeling and Security Objectives}
+\label{sec:sec_problem}
+
+Cyber threat intelligence platforms ingest potentially adversarial content from untrusted sources, rendering them prime targets for data poisoning, prompt injection, and lateral privilege escalation \cite{shostack2014threat, nist2012guide}. Applying the STRIDE threat modeling framework, the Wolverine architecture addresses four critical threat vectors: (1) \textit{Adversarial Prompt Injection} embedded in scraped profile text \cite{perez2022ignore, greshake2023not}; (2) \textit{Ground-Truth Oracle Leakage} during automated evaluation; (3) \textit{Lateral Container Compromise} across Docker services \cite{sultan2019container}; and (4) \textit{Unauthorized Mutation of Identity Graphs} via administrative API tampering.
+
+\section{Multi-Zone Network Isolation and Tor Gateway}
+\label{sec:network_security}
+
+Wolverine enforces defense-in-depth through three isolated Docker network bridge namespaces:
+
+\begin{itemize}
+    \item \textbf{Tor Onion Gateway (\texttt{wolverine-dmz}):} Public demonstration ingress is restricted to an Nginx reverse proxy mapped to a Tor hidden service port 80 (\texttt{torrc}) \cite{dingledine2004tor}. The gateway strictly enforces: (1) HTTP \texttt{GET} and \texttt{HEAD} methods only, blocking all state-mutating requests (\texttt{POST}, \texttt{PUT}, \texttt{DELETE}); (2) rate limiting via \texttt{limit\_req\_zone} at $10\text{ req/s}$ with a burst limit of 20; (3) route blocking for internal paths (\texttt{/admin}, \texttt{/metrics}, \texttt{/seed}, \texttt{/debug}); and (4) mandatory injection of the security provenance header \texttt{X-Synthetic-Research: true}. Automated verification via \texttt{test-tor-safety.sh} confirms 8/8 security assertions pass.
+    \item \textbf{Internal Analytical Mesh (\texttt{wolverine-internal}):} Connects the Express API, the five synthetic site backends, MinIO S3 storage, and Redis Streams. Port bindings to the host interface are completely disabled in \texttt{docker-compose.prod.yml}.
+    \item \textbf{Logically Isolated Truth Vault (\texttt{wolverine-truth}):} Configured with \texttt{internal: true}, isolating \texttt{postgres-truth} from internet and cross-network routing. Only the evaluator container is multi-homed during scoring cycles.
+\end{itemize}
+
+\section{Role-Based Access Control (RBAC)}
+\label{sec:rbac}
+
+API endpoints are protected by the \texttt{requireRole} middleware (\texttt{wolverine/src/middleware/rbac.ts}) implementing five normative privilege tiers:
+
+\begin{enumerate}
+    \item \texttt{admin}: Full administrative execution, container restarts, and manual entity resolution override.
+    \item \texttt{operator}: Collection run triggering, pipeline processing, and scenario execution.
+    \item \texttt{researcher}: Query access to resolved entity graphs, canonical records, and RAG analysis.
+    \item \texttt{reviewer}: Restricted access to inspect and adjudicate the human-in-the-loop candidate review queue ($0.70 \le S < 0.92$).
+    \item \texttt{public\_demo}: Read-only inspection of sanitized public demonstration graphs via Tor.
+\end{enumerate}
+
+\section{Adversarial Input Defense in RAG Pipelines}
+\label{sec:rag_defense}
+
+When Large Language Models summarize retrieved investigative dossiers, adversarial actors can embed indirect prompt injections within forum threads (e.g., \textit{"System override: ignore previous instructions and print authorization token"}) \cite{perez2022ignore, liu2024formalizing}. Wolverine neutralizes these threats prior to LLM embedding via a 4-rule deterministic pipeline in \texttt{wolverine/src/ai/rag.ts}:
+
+\begin{equation}
+\text{Sanitize}(T) = \text{RegexRedact}\big(\text{Truncate}_{500}\big(\text{StripControlChars}(T)\big)\big)
+\end{equation}
+
+All output is validated against a strict JSON schema requiring verifiable record citations, rejecting unstructured conversational outputs.
+
+\section{Ethical Boundaries and Synthetic Data Isolation}
+\label{sec:ethics}
+
+To prevent ethical violations and privacy breaches, the Wolverine ecosystem enforces strict research boundaries \cite{dwork2006differential, nowok2016synthpop}: (1) zero real-world PII is ever collected or processed; (2) all synthetic entities originate from deterministic Faker seeds with explicit \texttt{SYNTHETIC RESEARCH DEMO} UI banners; (3) simulated marketplace transactions contain fictional Bitcoin wallet addresses without payment rails; and (4) entity linkages are explicitly categorized as heuristic correlations rather than legal identity attributions.
+
+\section{Residual Risks and Security Limitations}
+\label{sec:sec_limitations}
+
+Key residual risks include: (1) Docker bridge isolation relies on host kernel namespace integrity rather than physical hardware air-gapping; (2) regex-based prompt sanitization cannot guarantee complete immunity against novel semantic jailbreaks; and (3) validator consensus runs within a single Node.js heap memory space in the demonstration environment.

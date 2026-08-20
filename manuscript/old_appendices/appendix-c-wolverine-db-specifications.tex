@@ -1,0 +1,119 @@
+\chapter{WolverineDB Formal Specifications}
+\label{app:wolverinedb-specifications}
+
+This appendix provides the specification-to-code mapping matrix for WolverineDB. The full architectural and cryptographic treatment is provided in \Cref{ch:wolverinedb}; this appendix serves as a comprehensive reference for the 91 normative \texttt{WDB-*} specifications organized by domain.
+
+\section{Specification Taxonomy}
+\label{app-sec:wdb-taxonomy}
+
+The WolverineDB specification suite is organized into functional domains, each governing a specific aspect of the cryptographic trust layer. \Cref{tab:app-wdb-full-mapping} provides the authoritative mapping from specification identifiers to implementation files and verification status.
+
+\begin{longtable}{p{0.13\textwidth} p{0.28\textwidth} p{0.30\textwidth} p{0.19\textwidth}}
+\caption{WolverineDB Specification-to-Code Traceability Matrix} \label{tab:app-wdb-full-mapping} \\
+\toprule
+\textbf{Spec Range} & \textbf{Domain} & \textbf{Implementation} & \textbf{Status} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Spec Range} & \textbf{Domain} & \textbf{Implementation} & \textbf{Status} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{4}{r}{\textit{Continued on next page}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+
+WDB-0001--0002 & Core Architecture & \texttt{src/core/} & Implemented \\
+WDB-0003 & Hash Chain (CDC) & \texttt{src/crypto/hash.ts} & Implemented (Full) \\
+WDB-0004 & Merkle Tree & \texttt{src/crypto/merkle.ts} & Implemented (Full) \\
+WDB-0005--0010 & Binary Encoding & \texttt{src/binary/c14n.ts}, \texttt{encoder.ts}, \texttt{record\_id.ts} & Implemented (Full) \\
+WDB-0011--0015 & Error Handling & \texttt{src/core/errors.ts} & Implemented (Full) \\
+\midrule
+WDB-0021 & EVM Anchor & \texttt{src/anchors/evm.ts} & Simulated (Map) \\
+WDB-0022--0025 & Checkpoint Storage & \texttt{src/checkpoint/local.ts}, \texttt{s3.ts}, \texttt{anchor.ts} & Implemented (Full) \\
+\midrule
+WDB-0030 & Sentinel Policy Gate & \texttt{src/sentinel/policy\_gate.ts} & Implemented (Full) \\
+WDB-0031 & Sentinel Anomaly Engine & \texttt{src/sentinel/anomaly\_engine.ts} & Implemented (Full) \\
+WDB-0032--0035 & Sentinel Advisory & \texttt{src/sentinel/advisor.ts} & Implemented (Full) \\
+\midrule
+WDB-0040--0050 & Signing Providers & \texttt{src/crypto/signing\_provider.ts} & Partial (Local only) \\
+WDB-0051--0060 & Database Adapters & \texttt{src/adapters/mysql.ts}, \texttt{sqlite.ts} & Implemented (Full) \\
+\midrule
+WDB-0080--0085 & Trust Network Ledger & \texttt{src/trust\_network/ledger.ts} & Implemented (Full) \\
+WDB-0086--0090 & BFT Consensus & \texttt{src/trust\_network/consensus.ts} & Simulated (Memory) \\
+WDB-0091--0096 & Validator \& Replication & \texttt{src/trust\_network/validator.ts} & Simulated (Memory) \\
+\midrule
+WDB-0100--0110 & Runtime \& Transport & \texttt{src/runtime/network\_transport.ts} & Simulated (Memory) \\
+WDB-0111--0120 & Validator Daemon & \texttt{src/runtime/validator\_daemon.ts} & Simulated (Memory) \\
+\midrule
+WDB-0130 & Atomic File Creation & \texttt{src/checkpoint/local.ts} & Hardened (v1.3.0) \\
+WDB-0131 & Mutex Append Queue & \texttt{src/trust\_network/ledger.ts} & Hardened (v1.3.0) \\
+WDB-0132 & Byte Collation & \texttt{src/binary/record\_id.ts} & Hardened (v1.3.0) \\
+WDB-0133 & Replay Protection & \texttt{PostgresReplayStore} & Implemented (Durable) \\
+WDB-0134--0135 & Key Rotation \& Collusion & \texttt{src/bft\_hardening/} & Hardened (v1.3.0) \\
+
+\end{longtable}
+
+\textbf{Status Legend:}
+\begin{itemize}[nosep]
+    \item \textbf{Implemented (Full)}: Specification fully satisfied with passing tests.
+    \item \textbf{Simulated (Memory)}: Logic implemented but operates via \texttt{DirectMemoryNetworkTransport} --- not distributed.
+    \item \textbf{Simulated (Map)}: External service replaced by in-memory \texttt{Map} --- no real persistence.
+    \item \textbf{Partial}: Interface defined but only dev/test implementation exists.
+    \item \textbf{Hardened (v1.3.0)}: Security-critical improvement from the v1.3.0 audit cycle.
+\end{itemize}
+
+\section{Cryptographic Structures}
+\label{app-sec:wdb-crypto}
+
+The hash chain and Merkle tree specifications are detailed in \Cref{ch:wolverinedb}. The recurrence relation for the continuous hash chain (\texttt{WDB-0003}) is:
+\begin{equation}
+    H_i = \text{SHA256}\left( H_{i-1} \parallel \text{SHA256}(m_i) \right)
+\end{equation}
+Where $H_0$ is the genesis hash (all zeros) and $m_i$ is the deterministic canonical JSON serialization of the $i$-th record payload.
+
+The RFC~6962-compatible Merkle tree (\texttt{WDB-0004}) computes:
+\begin{align}
+    H_{\text{leaf}} &= \text{SHA256}(0\texttt{x00} \parallel \text{data}) \\
+    H_{\text{node}} &= \text{SHA256}(0\texttt{x01} \parallel H_{\text{left}} \parallel H_{\text{right}})
+\end{align}
+
+\section{Simulation Boundaries}
+\label{app-sec:wdb-sim-boundaries}
+
+Three critical subsystems operate in simulation mode (\Cref{ch:wolverinedb}):
+
+\begin{enumerate}
+    \item \textbf{Network Transport} (\texttt{WDB-0100}): The \texttt{DirectMemoryNetworkTransport} passes messages within the V8 heap. It experiences zero latency, zero packet loss, and zero partitions. Claims of BFT resilience based on this implementation are invalid for production contexts.
+    
+    \item \textbf{KMS/HSM Signing} (\texttt{WDB-0040}): The prototype uses \texttt{LocalSoftwareSigningProvider} with ephemeral keys. The \texttt{CloudKmsSigningProvider} and \texttt{HsmSigningProvider} interfaces exist but delegate to simulated backends.
+    
+    \item \textbf{EVM Anchoring} (\texttt{WDB-0021}): Checkpoint anchoring targets an in-memory \texttt{Map} rather than a real Ethereum contract. No decentralized persistence is achieved.
+\end{enumerate}
+
+\section{Verified Security Vulnerabilities}
+\label{app-sec:wdb-vulnerabilities}
+
+The gap between specification and implementation yields known vulnerabilities documented in \Cref{ch:security-ethics}:
+\begin{enumerate}
+    \item \textbf{In-Memory Transport Collapse:} A single process OOM event destroys the entire ``quorum.''
+    \item \textbf{Configuration-Dependent Replay Protection:} CLI runners default to \texttt{InMemoryReplayStore} unless explicitly configured to use \texttt{PostgresReplayStore}.
+    \item \textbf{Sentinel TOCTOU Window:} Policy checks occur before ledger append, creating a narrow race condition.
+    \item \textbf{No Certificate Pinning:} The simulated transport does not validate peer identities.
+\end{enumerate}
+
+\section{Test Coverage}
+\label{app-sec:wdb-testing}
+
+The repository contains 219+ vitest test cases covering:
+\begin{itemize}[nosep]
+    \item Cryptographic primitive correctness (hash chains, Merkle proofs)
+    \item Concurrent BFT consensus under contention
+    \item Catastrophic recovery scenarios
+    \item Database adapter compliance (SQLite, MySQL)
+    \item Malicious actor simulation (Byzantine validators)
+    \item Fuzzing edge cases
+\end{itemize}
+
+\textbf{Critical interpretation:} These tests evaluate \textit{specification compliance under ideal conditions}. A passing consensus test proves that the in-memory event bus functions correctly; it provides zero evidence that the logic survives real TCP/IP network partitions, clock skew, or partial connectivity.

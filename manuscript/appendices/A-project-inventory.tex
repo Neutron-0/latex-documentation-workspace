@@ -1,0 +1,67 @@
+\chapter{Project Inventory}
+\label{app:project_inventory}
+
+This appendix provides a comprehensive structural mapping of the software repositories comprising the Wolverine ecosystem. The system is functionally partitioned across three primary codebases: the core extraction and entity resolution pipeline (\texttt{wolverine-sih}), the cryptographic trust ledger (\texttt{wolverine-db}), and the cinematic analytical frontend (\texttt{Vzeya}). All descriptions reflect the definitive implementation state.
+
+\section{Wolverine SIH (Main Pipeline Monorepo)}
+\label{app:project_inventory:wolverine_sih}
+
+The primary backend monorepo, \texttt{wolverine-sih}, is implemented as a Node.js workspace. It orchestrates the data extraction adapters, graph projection engines, deterministic entity resolution algorithms, and houses the code for the five synthetic target platforms.
+
+\subsection{Core Backend (\texttt{wolverine/src})}
+\begin{itemize}
+    \item \texttt{ai/rag.ts}: AI-assisted analysis utilizing Ollama for contextual question answering. It implements a strict 4-rule \texttt{sanitizeText} filter and enforces a 0.75 confidence heuristic alongside a 5000ms timeout for large language model fallbacks.
+    \item \texttt{api/server.ts}: The primary Express web server, providing Role-Based Access Control (RBAC) middleware (supporting admin, operator, researcher, reviewer, and public\_demo roles) and exposing critical endpoints for graph queries (\texttt{/v1/graph/query}) and entity resolution candidates (\texttt{/v1/resolution-candidates}).
+    \item \texttt{collector/adapters.ts}: The network extraction layer containing five distinct protocol adapters (AtlasRestAdapter, BriarHtmlAdapter, CinderJsonApiAdapter, DriftHybridAdapter, and EmberGraphqlAdapter). All network egress is routed through a Tor SOCKS proxy via \texttt{socks-proxy-agent}.
+    \item \texttt{graph/projector.ts}: Implements the \texttt{GraphProjector} engine utilizing strict in-memory Bounded Breadth-First Search (BFS). Graph traversal is aggressively constrained to a depth of 4 and a maximum of 500 records to prevent memory exhaustion. The system does not utilize PostgreSQL recursive CTEs for graph traversal.
+    \item \texttt{normalizer/parsers.ts}: Transforms raw HTML, JSON:API, and GraphQL extraction payloads into a standardized \texttt{CanonicalRecord} representation.
+    \item \texttt{pipeline/processor.ts}: The principal orchestrator for inbound data, handling SHA-256 deduplication and routing structurally valid payloads into canonical processing while isolating malformed data into a quarantine table.
+    \item \texttt{resolver/entity\_resolver.ts}: The deterministic entity resolution engine. It implements blocking keys (based on prefix, registration week, and email domain) and Jaro-Winkler string similarity. The engine applies an established similarity weighting matrix: alias similarity (0.30), disposition similarity (0.15), temporal proximity (0.20, modeled strictly as a linear 30-day decay rather than exponential), active overlap (0.15), and cross-site cues (0.20). Final resolution decisions rigorously adhere to a 0.92 threshold for automatic linkage and a 0.70 threshold for manual review.
+\end{itemize}
+
+\subsection{Synthetic Ecosystem and Evaluator}
+\begin{itemize}
+    \item \texttt{sites/}: Contains the five simulated target platforms, operating on heterogeneous technological stacks (Node.js/Next.js, Python/Django, PHP/Laravel, Go/Chi, Rust/Axum) and diverse relational storage (PostgreSQL and MySQL).
+    \item \texttt{generator/src/generator/engine.py}: The \texttt{SyntheticWorldEngine} application orchestrating a 12-phase simulation pipeline, extending from canonical person generation and interaction scenarios to deliberate noise injection.
+    \item \texttt{evaluator/src/evaluator/\_\_main\_\_.py}: The evaluation framework establishing static baseline validation metrics (Precision=0.9280, Recall=0.4598, F1=0.6149) for the entity resolution pipeline.
+\end{itemize}
+
+\section{Wolverine DB (Cryptographic Trust Layer)}
+\label{app:project_inventory:wolverine_db}
+
+The \texttt{wolverine-db} repository is a dedicated verification ledger providing Byzantine Fault Tolerant (BFT) provenance for all data mutations within the Wolverine ecosystem.
+
+\subsection{Cryptographic Primitives (\texttt{src/crypto})}
+\begin{itemize}
+    \item \texttt{hash.ts}: Implements timing-safe SHA-256 cryptographic hash chains (\texttt{computeChangeHash}) for tracing immutable state changes.
+    \item \texttt{merkle.ts}: Constructs RFC 6962 compliant Merkle trees (\texttt{MerkleTree}) for mathematical inclusion proofs, utilizing bounded leaf counts and strict domain separation prefixes (0x00 for leaves, 0x01 for interior nodes).
+    \item \texttt{canonical.ts}: Ensures RFC 8785 JSON Canonicalization, combined with \texttt{TaggedField} binary tuples to guarantee deterministic serialization prior to cryptographic hashing.
+\end{itemize}
+
+\subsection{Consensus and Survivability (\texttt{src/})}
+\begin{itemize}
+    \item \texttt{trust\_network/consensus.ts}: The \texttt{TrustConsensusEngine} processes M-of-N validator attestations and generates \texttt{QuorumCertificate} cryptographic records. While the BFT logic is mathematically rigorous, network communication between validators is simulated via an in-process \texttt{DirectMemoryNetworkTransport} rather than physical socket transmission.
+    \item \texttt{bft\_hardening/}: Modules responsible for epoch rotation, atomic key rotation, and collusion defense.
+    \item \texttt{survivability/}: Infrastructure supporting catastrophic cluster recovery, crash-safe journaling, and disaster queue replay.
+\end{itemize}
+
+\section{Vzeya (Cinematic Frontend)}
+\label{app:project_inventory:vzeya}
+
+The \texttt{Vzeya} repository provides a cinematic, high-performance analytical interface, engineered using Next.js 15.3, React 19, and Three.js.
+
+\subsection{Application Architecture (\texttt{app/})}
+\begin{itemize}
+    \item \texttt{/architecture} and \texttt{/demonstration}: Top-level routes exposing distributed microservices telemetry and a simulated live attribution lab.
+    \item \texttt{/intelligence} and \texttt{/threat}: Dashboards dedicated to threat stream visualization and zero-day vulnerability radars.
+\end{itemize}
+
+\subsection{Narrative Engine (\texttt{components/narrative/})}
+\begin{itemize}
+    \item \texttt{InteractiveParticlesMesh.tsx}: A high-performance WebGL particle visualization shader. It utilizes raw GLSL shaders, Simplex noise, and \texttt{InstancedBufferGeometry} to render over 13,000 interactive particles with mouse repulsion physics.
+    \item \texttt{CrtBootSequence.tsx}: Orchestrates the initial application boot sequence. Notably, the CRT scanline and phosphor glow effects are rendered entirely utilizing CSS \texttt{repeating-linear-gradient} rules rather than WebGL post-processing shaders.
+    \item \texttt{Execution3DWorld.tsx}: Renders a spatial 3D corridor containing eight interactive HUD terminal meshes (\texttt{EXEC-01} to \texttt{EXEC-08}).
+\end{itemize}
+
+\vspace{1em}
+\noindent \textit{Note: All Vzeya frontend components currently operate on 100\% static and mocked data structures. The interface does not presently initiate actual \texttt{fetch()} network requests to the Wolverine SIH backend APIs.}
